@@ -1,0 +1,2 @@
+# Super App
+This repository holds the contract code that will receive Superfluid streams from our frontend application and process them as needed. This will include unwrapping the incoming super tokens and interacting with Uniswap liquidity provider positions.
