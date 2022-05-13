@@ -27,10 +27,39 @@ interface IERC20 {
     event Approval(address indexed owner, address indexed spender, uint value);
 }
 
-contract SuperAppPOC is SuperAppBase {
+interface KeeperCompatibleInterface {
+  /**
+   * @notice checks if the contract requires work to be done.
+   * @param checkData data passed to the contract when checking for Upkeep.
+   * @return upkeepNeeded boolean to indicate whether the keeper should call
+   * performUpkeep or not.
+   * @return performData bytes that the keeper should call performUpkeep with,
+   * if upkeep is needed.
+   */
+  function checkUpkeep(bytes calldata checkData) external returns (bool upkeepNeeded,bytes memory performData);
+  
+  /**
+   * @notice Performs work on the contract. Executed by the keepers, via the registry.
+   * @param performData is the data which was passed back from the checkData
+   * simulation.
+   */
+  function performUpkeep(bytes calldata performData) external;
+    
+}
+
+contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
+
+    /**
+    * For chain link: Use an interval in seconds and a timestamp to slow execution of Upkeep
+    */
+    uint public immutable interval;
+    uint public lastTimeStamp;
+
     using CFAv1Library for CFAv1Library.InitData;
     CFAv1Library.InitData public cfaV1;      
     bytes32 constant public CFA_ID = keccak256("org.superfluid-finance.agreements.ConstantFlowAgreement.v1");
+
+    uint256 flowEndTime;
 
     ISuperToken private _acceptedToken;
     address public _receiver;  
@@ -46,6 +75,10 @@ contract SuperAppPOC is SuperAppBase {
         assert(address(host) != address(0));
         assert(address(acceptedToken) != address(0));
         assert(address(receiver) != address(0));
+
+        // chainlink vars
+        interval = 10;
+        lastTimeStamp = block.timestamp;
 
         _acceptedToken = acceptedToken;
         _receiver = receiver;
@@ -162,6 +195,19 @@ contract SuperAppPOC is SuperAppBase {
         require(_isCFAv1(agreementClass), "RedirectAll: only CFAv1 supported");
         _;
     }
+
+    /** Chainlink keeper required functions (https://docs.chain.link/docs/chainlink-keepers/compatible-contracts/) **/
+
+    function checkUpkeep(bytes calldata /* checkData */) external view override returns (bool upkeepNeeded, bytes memory /* performData */) {
+        upkeepNeeded = (block.timestamp - lastTimeStamp) > interval;
+    }
+
+    function performUpkeep(bytes calldata /* performData */) external override {
+
+        // Revalidate the check
+        if ((block.timestamp - lastTimeStamp) > interval ) {
+            lastTimeStamp = block.timestamp;
+            _acceptedToken.downgrade(_acceptedToken.balanceOf(address(this)));
+        }
+    }
 }
-
-
