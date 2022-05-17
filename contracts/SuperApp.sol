@@ -7,7 +7,8 @@ import {CFAv1Library} from "@superfluid-finance/ethereum-contracts/contracts/app
 import {IConstantFlowAgreementV1} from "@superfluid-finance/ethereum-contracts/contracts/interfaces/agreements/IConstantFlowAgreementV1.sol";
 
 // import sub contract for user positions
-import "./UserPosition.sol";
+//import "./UserPosition.sol";
+import "./testContract.sol";
 
 /* Uniswap required contracts */
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
@@ -91,7 +92,7 @@ contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
 
     /* --- Contract storage --- */
     // Track UserPosition contracts (map user address to contract address)
-    mapping(address => UserPosition) public userPositions;
+    mapping(address => TestContract) public userPositions;
 
     constructor(
         ISuperfluid host,
@@ -185,7 +186,7 @@ contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
         );
 
         // create new UserPosition contract
-        userPositions[decompiledContext.msgSender] = new UserPosition(decompiledContext.msgSender, _host, _acceptedToken, _receiver);//, _nonfungiblePositionManager);
+        userPositions[decompiledContext.msgSender] = new TestContract(_acceptedToken); //new UserPosition(decompiledContext.msgSender, _host, _acceptedToken, _receiver);//, _nonfungiblePositionManager);
         address newPosAddress = address(userPositions[decompiledContext.msgSender]);
 
         // emit event
@@ -194,6 +195,9 @@ contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
         // redirect stream to that contract and return new context
         // TODO: subtract fee from initial flow?
         newCtx = cfaV1.createFlowWithCtx(_ctx, newPosAddress, _acceptedToken, flowRate);
+
+        //cfaV1.createFlow(newPosAddress, _acceptedToken, flowRate);
+        //newCtx = _ctx;
     }
 
     function afterAgreementUpdated(
