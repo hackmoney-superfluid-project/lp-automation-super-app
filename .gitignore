@@ -1,9 +1,10 @@
-node_modules
-.env
-coverage
-coverage.json
-typechain
+superApp/node_modules
+superApp/.env
+uniswapFactory/node_modules
+uniswapFactory/.env
 
 #Hardhat files
-cache
-artifacts
+superApp/cache
+superApp/artifacts
+uniswapFactory/cache
+uniswapFactory/artifacts
