@@ -8,7 +8,7 @@ const receiver = '0x41A10AFC05B4c18eF384c1cA88E5AC6c116cF7bE';
 
 const main = async () => {
   const SuperAppPOC = await hre.ethers.getContractFactory("SuperAppPOC");
-  const superAppPOC = await SuperAppPOC.deploy(host, fDAIx, receiver, '0xbA9a71B27a2794F16c657863857d7E03f994AD39');
+  const superAppPOC = await SuperAppPOC.deploy(host, fDAIx, receiver, '0x2feF0dBaeb0e29dBaf574d5FAA0f0110eCDa777a');
   await superAppPOC.deployed();
 
   console.log("SuperAppPOC deployed to:", superAppPOC.address);
