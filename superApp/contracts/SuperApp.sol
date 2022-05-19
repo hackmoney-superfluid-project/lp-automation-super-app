@@ -67,6 +67,10 @@ interface KeeperCompatibleInterface {
     function performUpkeep(bytes calldata performData) external;
 }
 
+interface IUniswapFactory {
+    function createUserPositionContract(ISuperToken acceptedToken, address userAddress) external returns (address);
+}
+
 contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
     /* --- Chain link --- */
     // Used to ensure that the upkeep is perfomed every __interval__ seconds
@@ -92,12 +96,16 @@ contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
 
     /* --- Contract storage --- */
     // Track UserPosition contracts (map user address to contract address)
-    mapping(address => TestContract) public userPositions;
+    mapping(address => address) public userPositions;
+
+    // Factory Contract
+    IUniswapFactory factory;
 
     constructor(
         ISuperfluid host,
         ISuperToken acceptedToken,
-        address receiver //, //INonfungiblePositionManager nonfungiblePositionManager
+        address receiver,
+        address uniswapFactoryAddress
     ) payable {
         assert(address(host) != address(0));
         assert(address(acceptedToken) != address(0));
@@ -105,6 +113,8 @@ contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
 
         // uniswap
         //_nonfungiblePositionManager = nonfungiblePositionManager;
+
+        factory = IUniswapFactory(uniswapFactoryAddress);
 
         // chainlink vars
         interval = 10;
@@ -186,18 +196,15 @@ contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
         );
 
         // create new UserPosition contract
-        userPositions[decompiledContext.msgSender] = new TestContract(_acceptedToken); //new UserPosition(decompiledContext.msgSender, _host, _acceptedToken, _receiver);//, _nonfungiblePositionManager);
-        address newPosAddress = address(userPositions[decompiledContext.msgSender]);
+        address posAddress = factory.createUserPositionContract(_acceptedToken, decompiledContext.msgSender);
+        userPositions[decompiledContext.msgSender] = posAddress;
 
         // emit event
-        emit StreamInitiated(_superToken, "Stream initiated successfully", newPosAddress);
+        emit StreamInitiated(_superToken, "Stream initiated successfully", posAddress);
 
         // redirect stream to that contract and return new context
         // TODO: subtract fee from initial flow?
-        newCtx = cfaV1.createFlowWithCtx(_ctx, newPosAddress, _acceptedToken, flowRate);
-
-        //cfaV1.createFlow(newPosAddress, _acceptedToken, flowRate);
-        //newCtx = _ctx;
+        newCtx = cfaV1.createFlowWithCtx(_ctx, posAddress, _acceptedToken, flowRate);
     }
 
     function afterAgreementUpdated(

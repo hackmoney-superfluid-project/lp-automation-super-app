@@ -9,11 +9,10 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "devDependencies": {
-    "hardhat": "^2.9.5"
-  },
   "dependencies": {
+    "@nomiclabs/hardhat-waffle": "^2.0.3",
     "@uniswap/v3-periphery": "^1.4.1",
-    "dotenv": "^16.0.1"
+    "dotenv": "^16.0.1",
+    "hardhat": "^2.9.5"
   }
 }

@@ -10,24 +10,7 @@ import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.s
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 import "@uniswap/v3-periphery/contracts/base/LiquidityManagement.sol";
 
-/**
- * @title Super token (Superfluid Token + ERC20 + ERC777) interface
- * @author Superfluid
- */
-interface ISuperToken is IERC20, IERC777 {
-
-    function totalSupply() external view override(IERC777, IERC20) returns (uint256);
-
-    function balanceOf(address account) external view override(IERC777, IERC20) returns(uint256 balance);
-
-    function transferAll(address recipient) external;
-
-    function getUnderlyingToken() external view returns(address tokenAddr);
-
-    function upgrade(uint256 amount) external;
-
-    function downgrade(uint256 amount) external;
-}
+import './ISuperToken.sol';
 
 contract UserPosition is IERC721Receiver {
     address public constant DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
@@ -39,7 +22,6 @@ contract UserPosition is IERC721Receiver {
 
     /// @notice Represents the deposit of an NFT
     struct Deposit {
-        address owner;
         uint128 liquidity;
         address token0;
         address token1;
@@ -51,9 +33,13 @@ contract UserPosition is IERC721Receiver {
     // the accepted super token
     ISuperToken acceptedToken;
 
-    constructor(INonfungiblePositionManager _nonfungiblePositionManager, ISuperToken _acceptedToken) {
+    // owner address
+    address userAddress;
+
+    constructor(INonfungiblePositionManager _nonfungiblePositionManager, ISuperToken _acceptedToken, address _userAddress) {
         nonfungiblePositionManager = _nonfungiblePositionManager;
         acceptedToken = _acceptedToken;
+        userAddress = _userAddress;
     }
 
     // Implementing `onERC721Received` so this contract can receive custody of erc721 tokens
@@ -89,7 +75,6 @@ contract UserPosition is IERC721Receiver {
         // set the owner and data for position
         // operator is msg.sender
         deposits[tokenId] = Deposit({
-            owner: owner,
             liquidity: liquidity,
             token0: token0,
             token1: token1
@@ -222,7 +207,7 @@ contract UserPosition is IERC721Receiver {
         returns (uint256 amount0, uint256 amount1)
     {
         // caller must be the owner of the NFT
-        require(msg.sender == deposits[tokenId].owner, "Not the owner");
+        require(msg.sender == userAddress, "Not the owner");
         // get liquidity data for tokenId
         uint128 liquidity = deposits[tokenId].liquidity;
         uint128 halfLiquidity = liquidity / 2;
@@ -316,7 +301,7 @@ contract UserPosition is IERC721Receiver {
         uint256 amount1
     ) internal {
         // get owner of contract
-        address owner = deposits[tokenId].owner;
+        address owner = userAddress;
 
         address token0 = deposits[tokenId].token0;
         address token1 = deposits[tokenId].token1;
@@ -329,7 +314,7 @@ contract UserPosition is IERC721Receiver {
     /// @param tokenId The id of the erc721
     function retrieveNFT(uint256 tokenId) external {
         // must be the owner of the NFT
-        require(msg.sender == deposits[tokenId].owner, "Not the owner");
+        require(msg.sender == userAddress, "Not the owner");
         // transfer ownership to original owner
         nonfungiblePositionManager.safeTransferFrom(
             address(this),
