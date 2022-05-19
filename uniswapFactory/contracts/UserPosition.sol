@@ -15,8 +15,14 @@ import "@uniswap/v3-periphery/contracts/base/LiquidityManagement.sol";
 import '@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol';
 
 import './ISuperToken.sol';
+import './KeeperCompatibleInterface.sol';
 
-contract UserPosition is IERC721Receiver {
+contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
+    /* --- Chain link --- */
+    // Used to ensure that the upkeep is perfomed every __interval__ seconds
+    uint256 public immutable interval;
+    uint256 public lastTimeStamp;
+
     address public constant DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
     address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
     // Swap functions were swapping to WETH but changed this to USDC for this example
@@ -52,77 +58,11 @@ contract UserPosition is IERC721Receiver {
         acceptedToken = _acceptedToken;
         userAddress = _userAddress;
         swapRouter = _swapRouter;
+
+        interval = 10;
+        lastTimeStamp = block.timestamp;
     }
-
-    /// @notice swapExactInputSingle swaps a fixed amount of DAI for a maximum possible amount of USDC
-    /// using the DAI/USDC 0.3% pool by calling `exactInputSingle` in the swap router.
-    /// @dev The calling address must approve this contract to spend at least `amountIn` worth of its DAI for this function to succeed.
-    /// @param amountIn The exact amount of DAI that will be swapped for USDC.
-    /// @return amountOut The amount of USDC received.
-    function swapExactInputSingle(uint256 amountIn) external returns (uint256 amountOut) {
-        // msg.sender must approve this contract
-
-        // Transfer the specified amount of DAI to this contract.
-        TransferHelper.safeTransferFrom(DAI, msg.sender, address(this), amountIn);
-
-        // Approve the router to spend DAI.
-        TransferHelper.safeApprove(DAI, address(swapRouter), amountIn);
-
-        // Naively set amountOutMinimum to 0. In production, use an oracle or other data source to choose a safer value for amountOutMinimum.
-        // We also set the sqrtPriceLimitx96 to be 0 to ensure we swap our exact input amount.
-        ISwapRouter.ExactInputSingleParams memory params =
-            ISwapRouter.ExactInputSingleParams({
-                tokenIn: DAI,
-                tokenOut: USDC,
-                fee: poolFee,
-                recipient: msg.sender,
-                deadline: block.timestamp,
-                amountIn: amountIn,
-                amountOutMinimum: 0,
-                sqrtPriceLimitX96: 0
-            });
-
-        // The call to `exactInputSingle` executes the swap.
-        amountOut = swapRouter.exactInputSingle(params);
-    }
-
-    /// @notice swapExactOutputSingle swaps a minimum possible amount of DAI for a fixed amount of USDC.
-    /// @dev The calling address must approve this contract to spend its DAI for this function to succeed. As the amount of input DAI is variable,
-    /// the calling address will need to approve for a slightly higher amount, anticipating some variance.
-    /// @param amountOut The exact amount of USDC to receive from the swap.
-    /// @param amountInMaximum The amount of DAI we are willing to spend to receive the specified amount of USDC.
-    /// @return amountIn The amount of DAI actually spent in the swap.
-    function swapExactOutputSingle(uint256 amountOut, uint256 amountInMaximum) external returns (uint256 amountIn) {
-        // Transfer the specified amount of DAI to this contract.
-        TransferHelper.safeTransferFrom(DAI, msg.sender, address(this), amountInMaximum);
-
-        // Approve the router to spend the specifed `amountInMaximum` of DAI.
-        // In production, you should choose the maximum amount to spend based on oracles or other data sources to acheive a better swap.
-        TransferHelper.safeApprove(DAI, address(swapRouter), amountInMaximum);
-
-        ISwapRouter.ExactOutputSingleParams memory params =
-            ISwapRouter.ExactOutputSingleParams({
-                tokenIn: DAI,
-                tokenOut: USDC,
-                fee: poolFee,
-                recipient: msg.sender,
-                deadline: block.timestamp,
-                amountOut: amountOut,
-                amountInMaximum: amountInMaximum,
-                sqrtPriceLimitX96: 0
-            });
-
-        // Executes the swap returning the amountIn needed to spend to receive the desired amountOut.
-        amountIn = swapRouter.exactOutputSingle(params);
-
-        // For exact output swaps, the amountInMaximum may not have all been spent.
-        // If the actual amount spent (amountIn) is less than the specified maximum amount, we must refund the msg.sender and approve the swapRouter to spend 0.
-        if (amountIn < amountInMaximum) {
-            TransferHelper.safeApprove(DAI, address(swapRouter), 0);
-            TransferHelper.safeTransfer(DAI, msg.sender, amountInMaximum - amountIn);
-        }
-    }
-
+    
     // Implementing `onERC721Received` so this contract can receive custody of erc721 tokens
     function onERC721Received(
         address operator,
@@ -404,5 +344,106 @@ contract UserPosition is IERC721Receiver {
         );
         //remove information related to tokenId
         delete deposits[tokenId];
+    }
+
+    /// @notice swapExactInputSingle swaps a fixed amount of DAI for a maximum possible amount of USDC
+    /// using the DAI/USDC 0.3% pool by calling `exactInputSingle` in the swap router.
+    /// @dev The calling address must approve this contract to spend at least `amountIn` worth of its DAI for this function to succeed.
+    /// @param amountIn The exact amount of DAI that will be swapped for USDC.
+    /// @return amountOut The amount of USDC received.
+    function swapExactInputSingle(uint256 amountIn) private returns (uint256 amountOut) {
+        // msg.sender must approve this contract
+
+        // Transfer the specified amount of DAI to this contract.
+        TransferHelper.safeTransferFrom(DAI, address(this), address(this), amountIn);
+
+        // Approve the router to spend DAI.
+        TransferHelper.safeApprove(DAI, address(swapRouter), amountIn);
+
+        // Naively set amountOutMinimum to 0. In production, use an oracle or other data source to choose a safer value for amountOutMinimum.
+        // We also set the sqrtPriceLimitx96 to be 0 to ensure we swap our exact input amount.
+        ISwapRouter.ExactInputSingleParams memory params =
+            ISwapRouter.ExactInputSingleParams({
+                tokenIn: DAI,
+                tokenOut: USDC,
+                fee: poolFee,
+                recipient: address(this),
+                deadline: block.timestamp,
+                amountIn: amountIn,
+                amountOutMinimum: 0,
+                sqrtPriceLimitX96: 0
+            });
+
+        // The call to `exactInputSingle` executes the swap.
+        amountOut = swapRouter.exactInputSingle(params);
+    }
+
+    /// @notice swapExactOutputSingle swaps a minimum possible amount of DAI for a fixed amount of USDC.
+    /// @dev The calling address must approve this contract to spend its DAI for this function to succeed. As the amount of input DAI is variable,
+    /// the calling address will need to approve for a slightly higher amount, anticipating some variance.
+    /// @param amountOut The exact amount of USDC to receive from the swap.
+    /// @param amountInMaximum The amount of DAI we are willing to spend to receive the specified amount of USDC.
+    /// @return amountIn The amount of DAI actually spent in the swap.
+    function swapExactOutputSingle(uint256 amountOut, uint256 amountInMaximum) private returns (uint256 amountIn) {
+        // Transfer the specified amount of DAI to this contract.
+        TransferHelper.safeTransferFrom(DAI, address(this), address(this), amountInMaximum);
+
+        // Approve the router to spend the specifed `amountInMaximum` of DAI.
+        // In production, you should choose the maximum amount to spend based on oracles or other data sources to acheive a better swap.
+        TransferHelper.safeApprove(DAI, address(swapRouter), amountInMaximum);
+
+        ISwapRouter.ExactOutputSingleParams memory params =
+            ISwapRouter.ExactOutputSingleParams({
+                tokenIn: DAI,
+                tokenOut: USDC,
+                fee: poolFee,
+                recipient: address(this),
+                deadline: block.timestamp,
+                amountOut: amountOut,
+                amountInMaximum: amountInMaximum,
+                sqrtPriceLimitX96: 0
+            });
+
+        // Executes the swap returning the amountIn needed to spend to receive the desired amountOut.
+        amountIn = swapRouter.exactOutputSingle(params);
+
+        // For exact output swaps, the amountInMaximum may not have all been spent.
+        // If the actual amount spent (amountIn) is less than the specified maximum amount, we must refund the msg.sender and approve the swapRouter to spend 0.
+        if (amountIn < amountInMaximum) {
+            TransferHelper.safeApprove(DAI, address(swapRouter), 0);
+            TransferHelper.safeTransfer(DAI, msg.sender, amountInMaximum - amountIn);
+        }
+    }
+
+    /* --- Chainlink keeper required functions (https://docs.chain.link/docs/chainlink-keepers/compatible-contracts/) --- */
+    function checkUpkeep(
+        bytes calldata /* checkData */
+    )
+        external
+        view
+        override
+        returns (
+            bool upkeepNeeded,
+            bytes memory /* performData */
+        )
+    {
+        upkeepNeeded = (block.timestamp - lastTimeStamp) > interval;
+    }
+
+    function performUpkeep(
+        bytes calldata /* performData */
+    ) external override {
+        // Revalidate the check (perform this function every __interval__ seconds)
+        if ((block.timestamp - lastTimeStamp) > interval) {
+            lastTimeStamp = block.timestamp;
+
+            acceptedToken.downgrade(acceptedToken.balanceOf(address(this)));
+
+            address fDAIAddress = 0xd393b1E02dA9831Ff419e22eA105aAe4c47E1253;
+            uint256 daiContractBalance = IERC20(fDAIAddress).balanceOf(address(this));
+            uint256 amountToSwap = daiContractBalance / 2;
+
+            swapExactInputSingle(amountToSwap);
+        }
     }
 }
