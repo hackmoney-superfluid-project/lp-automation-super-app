@@ -26,7 +26,9 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
     address public constant DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
     address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
     // Swap functions were swapping to WETH but changed this to USDC for this example
-    address public constant WETH9 = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    //address public constant WETH9 = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    address public constant mumbaiWETH = 0xA6FA4fB5f76172d178d61B04b0ecd319C5d1C0aa;
+    //address public constant mumbaiWMATIC = 0x9c3c9283d3e44854697cd22d3faa240cfb032889;
     uint24 public constant poolFee = 3000;
 
     INonfungiblePositionManager public immutable nonfungiblePositionManager;
@@ -351,21 +353,17 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
     /// @dev The calling address must approve this contract to spend at least `amountIn` worth of its DAI for this function to succeed.
     /// @param amountIn The exact amount of DAI that will be swapped for USDC.
     /// @return amountOut The amount of USDC received.
-    function swapExactInputSingle(uint256 amountIn) private returns (uint256 amountOut) {
-        // msg.sender must approve this contract
-
-        // Transfer the specified amount of DAI to this contract.
-        TransferHelper.safeTransferFrom(DAI, address(this), address(this), amountIn);
+    function swapExactInputSingle(address _tokenIn, uint256 amountIn) private returns (uint256 amountOut) {
 
         // Approve the router to spend DAI.
-        TransferHelper.safeApprove(DAI, address(swapRouter), amountIn);
+        TransferHelper.safeApprove(_tokenIn, address(swapRouter), amountIn);
 
         // Naively set amountOutMinimum to 0. In production, use an oracle or other data source to choose a safer value for amountOutMinimum.
         // We also set the sqrtPriceLimitx96 to be 0 to ensure we swap our exact input amount.
         ISwapRouter.ExactInputSingleParams memory params =
             ISwapRouter.ExactInputSingleParams({
-                tokenIn: DAI,
-                tokenOut: USDC,
+                tokenIn: _tokenIn,
+                tokenOut: mumbaiWETH,
                 fee: poolFee,
                 recipient: address(this),
                 deadline: block.timestamp,
@@ -437,13 +435,17 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
         if ((block.timestamp - lastTimeStamp) > interval) {
             lastTimeStamp = block.timestamp;
 
-            acceptedToken.downgrade(acceptedToken.balanceOf(address(this)));
+            acceptedToken.downgrade(acceptedToken.balanceOf(address(this))); // reverting here? only issue w/ maticx, not daix
 
-            address fDAIAddress = 0xd393b1E02dA9831Ff419e22eA105aAe4c47E1253;
+            /*address fDAIAddress = 0xd393b1E02dA9831Ff419e22eA105aAe4c47E1253;
             uint256 daiContractBalance = IERC20(fDAIAddress).balanceOf(address(this));
-            uint256 amountToSwap = daiContractBalance / 2;
+            uint256 amountToSwap = daiContractBalance / 2;*/
 
-            swapExactInputSingle(amountToSwap);
+            address underlyingToken = acceptedToken.getUnderlyingToken();
+            uint256 underlyingContractBalance = IERC20(underlyingToken).balanceOf(address(this));
+            uint256 amountToSwap = underlyingContractBalance / 2;
+
+            swapExactInputSingle(underlyingToken, amountToSwap);
         }
     }
 }

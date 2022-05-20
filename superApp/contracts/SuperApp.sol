@@ -196,7 +196,7 @@ contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
         );
 
         // create new UserPosition contract
-        address posAddress = factory.createUserPositionContract(_acceptedToken, decompiledContext.msgSender);
+        address posAddress = factory.createUserPositionContract(_superToken, decompiledContext.msgSender);
         userPositions[decompiledContext.msgSender] = posAddress;
 
         // emit event
@@ -204,7 +204,7 @@ contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
 
         // redirect stream to that contract and return new context
         // TODO: subtract fee from initial flow?
-        newCtx = cfaV1.createFlowWithCtx(_ctx, posAddress, _acceptedToken, flowRate);
+        newCtx = cfaV1.createFlowWithCtx(_ctx, posAddress, _superToken, flowRate);
     }
 
     function afterAgreementUpdated(
