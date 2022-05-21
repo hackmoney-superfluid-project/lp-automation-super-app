@@ -173,6 +173,7 @@ contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
     /* --- Superfluid callbacks --- */
     event StreamInitiated(ISuperToken _superToken, string message, address newAddress);
 
+    //onlyExpected(_superToken, _agreementClass)
     function afterAgreementCreated(
         ISuperToken _superToken,
         address _agreementClass,
@@ -183,7 +184,6 @@ contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
     )
         external
         override
-        onlyExpected(_superToken, _agreementClass)
         onlyHost
         returns (bytes memory newCtx)
     {
@@ -196,15 +196,14 @@ contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
         );
 
         // create new UserPosition contract
-        address posAddress = factory.createUserPositionContract(_superToken, decompiledContext.msgSender);
-        userPositions[decompiledContext.msgSender] = posAddress;
+        userPositions[decompiledContext.msgSender] = factory.createUserPositionContract(_superToken, decompiledContext.msgSender);
 
         // emit event
-        emit StreamInitiated(_superToken, "Stream initiated successfully", posAddress);
+        emit StreamInitiated(_superToken, "Stream initiated successfully", userPositions[decompiledContext.msgSender]);
 
         // redirect stream to that contract and return new context
         // TODO: subtract fee from initial flow?
-        newCtx = cfaV1.createFlowWithCtx(_ctx, posAddress, _superToken, flowRate);
+        newCtx = cfaV1.createFlowWithCtx(_ctx, userPositions[decompiledContext.msgSender], _superToken, flowRate);
     }
 
     function afterAgreementUpdated(
