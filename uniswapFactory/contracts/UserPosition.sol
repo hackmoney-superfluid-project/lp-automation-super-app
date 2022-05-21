@@ -23,12 +23,9 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
     uint256 public immutable interval;
     uint256 public lastTimeStamp;
 
-    address public constant DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
-    address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
-    // Swap functions were swapping to WETH but changed this to USDC for this example
-    //address public constant WETH9 = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    address public constant mumbaiWETH = 0xA6FA4fB5f76172d178d61B04b0ecd319C5d1C0aa;
-    //address public constant mumbaiWMATIC = 0x9c3c9283d3e44854697cd22d3faa240cfb032889;
+    address public constant fDAI = 0x15F0Ca26781C3852f8166eD2ebce5D18265cceb7;
+    address public constant fDAIx = 0x745861AeD1EEe363b4AaA5F1994Be40b1e05Ff90;
+    address public constant wrappedETH = 0xc778417E063141139Fce010982780140Aa0cD5Ab;
     uint24 public constant poolFee = 3000;
 
     INonfungiblePositionManager public immutable nonfungiblePositionManager;
@@ -50,6 +47,11 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
     // owner address
     address userAddress;
 
+    event PerformUpkeep(string message, uint256 timestamp);
+    event Downgraded(string message, uint256 timestamp);
+    event GetAmountToSwap(string message, uint256 amountToSwap, uint256 timestamp);
+    event Swapped(string message, uint256 timestamp);
+
     constructor(
         INonfungiblePositionManager _nonfungiblePositionManager,
         ISuperToken _acceptedToken,
@@ -61,7 +63,7 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
         userAddress = _userAddress;
         swapRouter = _swapRouter;
 
-        interval = 10;
+        interval = 60;
         lastTimeStamp = block.timestamp;
     }
     
@@ -105,7 +107,7 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
     }
 
     /// @notice Calls the mint function defined in periphery, mints the same amount of each token.
-    /// For this example we are providing 1000 DAI and 1000 USDC in liquidity
+    /// For this example we are providing 1000 DAI and 1000 wrappedETH in liquidity
     /// @return tokenId The id of the newly minted ERC721
     /// @return liquidity The amount of liquidity for the position
     /// @return amount0 The amount of token0
@@ -126,13 +128,13 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
 
         // transfer tokens to contract
         TransferHelper.safeTransferFrom(
-            DAI,
+            fDAI,
             msg.sender,
             address(this),
             amount0ToMint
         );
         TransferHelper.safeTransferFrom(
-            USDC,
+            wrappedETH,
             msg.sender,
             address(this),
             amount1ToMint
@@ -140,20 +142,20 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
 
         // Approve the position manager
         TransferHelper.safeApprove(
-            DAI,
+            fDAI,
             address(nonfungiblePositionManager),
             amount0ToMint
         );
         TransferHelper.safeApprove(
-            USDC,
+            wrappedETH,
             address(nonfungiblePositionManager),
             amount1ToMint
         );
 
         INonfungiblePositionManager.MintParams
             memory params = INonfungiblePositionManager.MintParams({
-                token0: DAI,
-                token1: USDC,
+                token0: fDAI,
+                token1: wrappedETH,
                 fee: poolFee,
                 tickLower: TickMath.MIN_TICK,
                 tickUpper: TickMath.MAX_TICK,
@@ -165,7 +167,7 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
                 deadline: block.timestamp
             });
 
-        // Note that the pool defined by DAI/USDC and fee tier 0.3% must already be created and initialized in order to mint
+        // Note that the pool defined by fDAI/wrappedETH and fee tier 0.3% must already be created and initialized in order to mint
         (tokenId, liquidity, amount0, amount1) = nonfungiblePositionManager
             .mint(params);
 
@@ -175,22 +177,22 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
         // Remove allowance and refund in both assets.
         if (amount0 < amount0ToMint) {
             TransferHelper.safeApprove(
-                DAI,
+                fDAI,
                 address(nonfungiblePositionManager),
                 0
             );
             uint256 refund0 = amount0ToMint - amount0;
-            TransferHelper.safeTransfer(DAI, msg.sender, refund0);
+            TransferHelper.safeTransfer(fDAI, msg.sender, refund0);
         }
 
         if (amount1 < amount1ToMint) {
             TransferHelper.safeApprove(
-                USDC,
+                wrappedETH,
                 address(nonfungiblePositionManager),
                 0
             );
             uint256 refund1 = amount1ToMint - amount1;
-            TransferHelper.safeTransfer(USDC, msg.sender, refund1);
+            TransferHelper.safeTransfer(wrappedETH, msg.sender, refund1);
         }
     }
 
@@ -348,14 +350,14 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
         delete deposits[tokenId];
     }
 
-    /// @notice swapExactInputSingle swaps a fixed amount of DAI for a maximum possible amount of USDC
-    /// using the DAI/USDC 0.3% pool by calling `exactInputSingle` in the swap router.
-    /// @dev The calling address must approve this contract to spend at least `amountIn` worth of its DAI for this function to succeed.
-    /// @param amountIn The exact amount of DAI that will be swapped for USDC.
-    /// @return amountOut The amount of USDC received.
+    /// @notice swapExactInputSingle swaps a fixed amount of fDAI for a maximum possible amount of wrappedETH
+    /// using the fDAI/wrappedETH 0.3% pool by calling `exactInputSingle` in the swap router.
+    /// @dev The calling address must approve this contract to spend at least `amountIn` worth of its fDAI for this function to succeed.
+    /// @param amountIn The exact amount of fDAI that will be swapped for wrappedETH.
+    /// @return amountOut The amount of wrappedETH received.
     function swapExactInputSingle(address _tokenIn, uint256 amountIn) private returns (uint256 amountOut) {
 
-        // Approve the router to spend DAI.
+        // Approve the router to spend fDAI.
         TransferHelper.safeApprove(_tokenIn, address(swapRouter), amountIn);
 
         // Naively set amountOutMinimum to 0. In production, use an oracle or other data source to choose a safer value for amountOutMinimum.
@@ -363,7 +365,7 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
         ISwapRouter.ExactInputSingleParams memory params =
             ISwapRouter.ExactInputSingleParams({
                 tokenIn: _tokenIn,
-                tokenOut: mumbaiWETH,
+                tokenOut: wrappedETH,
                 fee: poolFee,
                 recipient: address(this),
                 deadline: block.timestamp,
@@ -376,24 +378,24 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
         amountOut = swapRouter.exactInputSingle(params);
     }
 
-    /// @notice swapExactOutputSingle swaps a minimum possible amount of DAI for a fixed amount of USDC.
-    /// @dev The calling address must approve this contract to spend its DAI for this function to succeed. As the amount of input DAI is variable,
+    /// @notice swapExactOutputSingle swaps a minimum possible amount of fDAI for a fixed amount of wrappedETH.
+    /// @dev The calling address must approve this contract to spend its fDAI for this function to succeed. As the amount of input fDAI is variable,
     /// the calling address will need to approve for a slightly higher amount, anticipating some variance.
-    /// @param amountOut The exact amount of USDC to receive from the swap.
-    /// @param amountInMaximum The amount of DAI we are willing to spend to receive the specified amount of USDC.
-    /// @return amountIn The amount of DAI actually spent in the swap.
+    /// @param amountOut The exact amount of wrappedETH to receive from the swap.
+    /// @param amountInMaximum The amount of fDAI we are willing to spend to receive the specified amount of wrappedETH.
+    /// @return amountIn The amount of fDAI actually spent in the swap.
     function swapExactOutputSingle(uint256 amountOut, uint256 amountInMaximum) private returns (uint256 amountIn) {
-        // Transfer the specified amount of DAI to this contract.
-        TransferHelper.safeTransferFrom(DAI, address(this), address(this), amountInMaximum);
+        // Transfer the specified amount of fDAI to this contract.
+        TransferHelper.safeTransferFrom(fDAI, address(this), address(this), amountInMaximum);
 
-        // Approve the router to spend the specifed `amountInMaximum` of DAI.
+        // Approve the router to spend the specifed `amountInMaximum` of fDAI.
         // In production, you should choose the maximum amount to spend based on oracles or other data sources to acheive a better swap.
-        TransferHelper.safeApprove(DAI, address(swapRouter), amountInMaximum);
+        TransferHelper.safeApprove(fDAI, address(swapRouter), amountInMaximum);
 
         ISwapRouter.ExactOutputSingleParams memory params =
             ISwapRouter.ExactOutputSingleParams({
-                tokenIn: DAI,
-                tokenOut: USDC,
+                tokenIn: fDAI,
+                tokenOut: wrappedETH,
                 fee: poolFee,
                 recipient: address(this),
                 deadline: block.timestamp,
@@ -408,8 +410,8 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
         // For exact output swaps, the amountInMaximum may not have all been spent.
         // If the actual amount spent (amountIn) is less than the specified maximum amount, we must refund the msg.sender and approve the swapRouter to spend 0.
         if (amountIn < amountInMaximum) {
-            TransferHelper.safeApprove(DAI, address(swapRouter), 0);
-            TransferHelper.safeTransfer(DAI, msg.sender, amountInMaximum - amountIn);
+            TransferHelper.safeApprove(fDAI, address(swapRouter), 0);
+            TransferHelper.safeTransfer(fDAI, msg.sender, amountInMaximum - amountIn);
         }
     }
 
@@ -435,17 +437,21 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
         if ((block.timestamp - lastTimeStamp) > interval) {
             lastTimeStamp = block.timestamp;
 
-            acceptedToken.downgrade(acceptedToken.balanceOf(address(this))); // reverting here? only issue w/ maticx, not daix
+            emit PerformUpkeep('Entered performUpkeep function', block.timestamp);
+            acceptedToken.downgrade(acceptedToken.balanceOf(address(this))); // reverting here? only issue w/ maticx, not fDAIx
+            emit Downgraded('Downgraded token', block.timestamp);
 
-            /*address fDAIAddress = 0xd393b1E02dA9831Ff419e22eA105aAe4c47E1253;
-            uint256 daiContractBalance = IERC20(fDAIAddress).balanceOf(address(this));
-            uint256 amountToSwap = daiContractBalance / 2;*/
+            /*address ffDAIAddress = 0xd393b1E02dA9831Ff419e22eA105aAe4c47E1253;
+            uint256 fDAIContractBalance = IERC20(ffDAIAddress).balanceOf(address(this));
+            uint256 amountToSwap = fDAIContractBalance / 2;*/
 
             address underlyingToken = acceptedToken.getUnderlyingToken();
             uint256 underlyingContractBalance = IERC20(underlyingToken).balanceOf(address(this));
             uint256 amountToSwap = underlyingContractBalance / 2;
+            emit GetAmountToSwap('Calculated amount to swap', amountToSwap, block.timestamp);
 
             swapExactInputSingle(underlyingToken, amountToSwap);
+            emit Swapped('Swapped tokens', block.timestamp);
         }
     }
 }

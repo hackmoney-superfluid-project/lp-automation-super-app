@@ -104,12 +104,10 @@ contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
     constructor(
         ISuperfluid host,
         ISuperToken acceptedToken,
-        address receiver,
         address uniswapFactoryAddress
     ) payable {
         assert(address(host) != address(0));
         assert(address(acceptedToken) != address(0));
-        assert(address(receiver) != address(0));
 
         // uniswap
         //_nonfungiblePositionManager = nonfungiblePositionManager;
@@ -122,7 +120,7 @@ contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
 
         _host = host;
         _acceptedToken = acceptedToken;
-        _receiver = receiver;
+        _receiver = '';
 
         cfa = IConstantFlowAgreementV1(address(host.getAgreementClass(CFA_ID)));
         cfaV1 = CFAv1Library.InitData(host, cfa);

@@ -16,7 +16,15 @@ require("dotenv").config();
   },
   networks: {
     mumbai: {
-      url: process.env.ALCHEMY_KEY,
+      url: process.env.MUMBAI_ALCHEMY_KEY,
+      accounts: [process.env.PRIVATE_KEY],
+    },
+    rinkeby: {
+      url: process.env.RINKEBY_ALCHEMY_KEY,
+      accounts: [process.env.PRIVATE_KEY],
+    },
+    "optimism-kovan": {
+      url: "https://kovan.optimism.io",
       accounts: [process.env.PRIVATE_KEY],
     },
   },
