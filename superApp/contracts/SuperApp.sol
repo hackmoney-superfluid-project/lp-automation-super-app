@@ -120,7 +120,7 @@ contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
 
         _host = host;
         _acceptedToken = acceptedToken;
-        _receiver = '';
+        //_receiver = '';
 
         cfa = IConstantFlowAgreementV1(address(host.getAgreementClass(CFA_ID)));
         cfaV1 = CFAv1Library.InitData(host, cfa);

@@ -2,9 +2,13 @@ superApp/node_modules
 superApp/.env
 uniswapFactory/node_modules
 uniswapFactory/.env
+testMaticDowngrade/node_modules
+testMaticDowngrade/.env
 
 #Hardhat files
 superApp/cache
 superApp/artifacts
 uniswapFactory/cache
 uniswapFactory/artifacts
+testMaticDowngrade/cache
+testMaticDowngrade/artifacts

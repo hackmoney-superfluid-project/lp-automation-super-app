@@ -51,6 +51,7 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
     event Downgraded(string message, uint256 timestamp);
     event GetAmountToSwap(string message, uint256 amountToSwap, uint256 timestamp);
     event Swapped(string message, uint256 timestamp);
+    event PosMinted(string message, uint256 timestamp, uint256 token);
 
     constructor(
         INonfungiblePositionManager _nonfungiblePositionManager,
@@ -76,12 +77,12 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
     ) external override returns (bytes4) {
         // get position information
 
-        _createDeposit(operator, tokenId);
+        _createDeposit(tokenId);
 
         return this.onERC721Received.selector;
     }
 
-    function _createDeposit(address owner, uint256 tokenId) internal {
+    function _createDeposit(uint256 tokenId) internal {
         (
             ,
             ,
@@ -112,8 +113,8 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
     /// @return liquidity The amount of liquidity for the position
     /// @return amount0 The amount of token0
     /// @return amount1 The amount of token1
-    function mintNewPosition()
-        external
+    function mintNewPosition(uint256 amount0ToMint, uint256 amount1ToMint, address _token0, address _token1)
+        internal
         returns (
             uint256 tokenId,
             uint128 liquidity,
@@ -121,12 +122,8 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
             uint256 amount1
         )
     {
-        // For this example, we will provide equal amounts of liquidity in both assets.
-        // Providing liquidity in both assets means liquidity will be earning fees and is considered in-range.
-        uint256 amount0ToMint = 1000;
-        uint256 amount1ToMint = 1000;
-
         // transfer tokens to contract
+        /*
         TransferHelper.safeTransferFrom(
             fDAI,
             msg.sender,
@@ -139,23 +136,24 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
             address(this),
             amount1ToMint
         );
+        */
 
         // Approve the position manager
         TransferHelper.safeApprove(
-            fDAI,
+            _token0,
             address(nonfungiblePositionManager),
             amount0ToMint
         );
         TransferHelper.safeApprove(
-            wrappedETH,
+            _token1,
             address(nonfungiblePositionManager),
             amount1ToMint
         );
 
         INonfungiblePositionManager.MintParams
             memory params = INonfungiblePositionManager.MintParams({
-                token0: fDAI,
-                token1: wrappedETH,
+                token0: _token0,
+                token1: _token1,
                 fee: poolFee,
                 tickLower: TickMath.MIN_TICK,
                 tickUpper: TickMath.MAX_TICK,
@@ -168,13 +166,14 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
             });
 
         // Note that the pool defined by fDAI/wrappedETH and fee tier 0.3% must already be created and initialized in order to mint
-        (tokenId, liquidity, amount0, amount1) = nonfungiblePositionManager
-            .mint(params);
+        (tokenId, liquidity, amount0, amount1) = nonfungiblePositionManager.mint(params);
 
         // Create a deposit
-        _createDeposit(msg.sender, tokenId);
+        _createDeposit(tokenId);
 
         // Remove allowance and refund in both assets.
+        // Dont think we need this because refunded amounts will just stay in the contract
+        /*
         if (amount0 < amount0ToMint) {
             TransferHelper.safeApprove(
                 fDAI,
@@ -194,6 +193,7 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
             uint256 refund1 = amount1ToMint - amount1;
             TransferHelper.safeTransfer(wrappedETH, msg.sender, refund1);
         }
+        */
     }
 
     /// @notice Collects the fees associated with provided liquidity
@@ -450,8 +450,11 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
             uint256 amountToSwap = underlyingContractBalance / 2;
             emit GetAmountToSwap('Calculated amount to swap', amountToSwap, block.timestamp);
 
-            swapExactInputSingle(underlyingToken, amountToSwap);
+            uint256 amountSwapped = swapExactInputSingle(underlyingToken, amountToSwap);
             emit Swapped('Swapped tokens', block.timestamp);
+
+            (uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1) = mintNewPosition(amountToSwap, amountSwapped, underlyingToken, wrappedETH);
+            //emit PosMinted('Minted Position', block.timestamp, tokenId);
         }
     }
 }
