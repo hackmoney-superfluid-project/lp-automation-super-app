@@ -166,10 +166,11 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
             });
 
         // Note that the pool defined by fDAI/wrappedETH and fee tier 0.3% must already be created and initialized in order to mint
+        //nonfungiblePositionManager.mint(params);
         (tokenId, liquidity, amount0, amount1) = nonfungiblePositionManager.mint(params);
 
         // Create a deposit
-        _createDeposit(tokenId);
+        //_createDeposit(tokenId);
 
         // Remove allowance and refund in both assets.
         // Dont think we need this because refunded amounts will just stay in the contract
@@ -434,8 +435,8 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
         bytes calldata /* performData */
     ) external override {
         // Revalidate the check (perform this function every __interval__ seconds)
-        if ((block.timestamp - lastTimeStamp) > interval) {
-            lastTimeStamp = block.timestamp;
+        //if ((block.timestamp - lastTimeStamp) > interval) {
+            //lastTimeStamp = block.timestamp;
 
             emit PerformUpkeep('Entered performUpkeep function', block.timestamp);
             acceptedToken.downgrade(acceptedToken.balanceOf(address(this))); // reverting here? only issue w/ maticx, not fDAIx
@@ -453,8 +454,11 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
             uint256 amountSwapped = swapExactInputSingle(underlyingToken, amountToSwap);
             emit Swapped('Swapped tokens', block.timestamp);
 
-            (uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1) = mintNewPosition(amountToSwap, amountSwapped, underlyingToken, wrappedETH);
-            //emit PosMinted('Minted Position', block.timestamp, tokenId);
-        }
+            //(uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1) = mintNewPosition(amountToSwap, amountSwapped, underlyingToken, wrappedETH);
+            uint256 amtIn1 = 0.000001 * (10 ** 18);
+            uint256 amtIn2 = 0.000000000305729 * (10 ** 18);
+            (uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1) = mintNewPosition(amtIn1, amtIn2, underlyingToken, wrappedETH);
+            emit PosMinted('Minted Position', block.timestamp, tokenId);
+        //}
     }
 }
