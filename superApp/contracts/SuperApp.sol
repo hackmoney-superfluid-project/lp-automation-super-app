@@ -69,6 +69,7 @@ interface KeeperCompatibleInterface {
 
 interface IUniswapFactory {
     function createUserPositionContract(ISuperToken acceptedToken, address userAddress) external returns (address);
+    function callPositionContract(address userAddress) external;
 }
 
 contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
@@ -97,6 +98,8 @@ contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
     /* --- Contract storage --- */
     // Track UserPosition contracts (map user address to contract address)
     mapping(address => address) public userPositions;
+    address[] userArray;
+    uint currUser;
 
     // Factory Contract
     IUniswapFactory factory;
@@ -110,6 +113,7 @@ contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
         assert(address(acceptedToken) != address(0));
 
         // uniswap
+        currUser = 0;
         //_nonfungiblePositionManager = nonfungiblePositionManager;
 
         factory = IUniswapFactory(uniswapFactoryAddress);
@@ -195,6 +199,7 @@ contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
 
         // create new UserPosition contract
         userPositions[decompiledContext.msgSender] = factory.createUserPositionContract(_superToken, decompiledContext.msgSender);
+        userArray.push(decompiledContext.msgSender);
 
         // emit event
         emit StreamInitiated(_superToken, "Stream initiated successfully", userPositions[decompiledContext.msgSender]);
@@ -277,7 +282,13 @@ contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
         // Revalidate the check (perform this function every __interval__ seconds)
         if ((block.timestamp - lastTimeStamp) > interval) {
             lastTimeStamp = block.timestamp;
-
+            factory.callPositionContract(userArray[currUser]);
+            ++currUser;
+            if(currUser >= userArray.length){
+                currUser = 0;
+            }
+            // Get the next contract to maintain 
+            // userArray[currUser] == user address for an existing 
             // Downgrade all super tokens in the contract
             //_acceptedToken.downgrade(_acceptedToken.balanceOf(address(this)));
 
