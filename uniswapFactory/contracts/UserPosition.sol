@@ -16,13 +16,15 @@ import '@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol';
 
 import './ISuperToken.sol';
 import './KeeperCompatibleInterface.sol';
+import './IUniswapV2Router02.sol';
 
-contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
+//LiquidityManagement
+contract UserPosition is KeeperCompatibleInterface, IERC721Receiver  {
     /* --- Chain link --- */
     // Used to ensure that the upkeep is perfomed every __interval__ seconds
     uint256 public immutable interval;
     uint256 public lastTimeStamp;
-
+    address public constant DAI = 0xc7AD46e0b8a400Bb3C915120d284AafbA8fc4735;
     address public constant fDAI = 0x15F0Ca26781C3852f8166eD2ebce5D18265cceb7;
     address public constant fDAIx = 0x745861AeD1EEe363b4AaA5F1994Be40b1e05Ff90;
     address public constant wrappedETH = 0xc778417E063141139Fce010982780140Aa0cD5Ab;
@@ -47,22 +49,31 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
     // owner address
     address userAddress;
 
+    // new: router
+    IUniswapV2Router02 router;
+
     event PerformUpkeep(string message, uint256 timestamp);
     event Downgraded(string message, uint256 timestamp);
     event GetAmountToSwap(string message, uint256 amountToSwap, uint256 timestamp);
     event Swapped(string message, uint256 timestamp);
     event PosMinted(string message, uint256 timestamp, uint256 token);
+    event GotPool(string message, address add, int24 tic);
 
+    //PeripheryImmutableState(_factory, _WETH9)
+    //address _factory,
+    //address _WETH9
     constructor(
         INonfungiblePositionManager _nonfungiblePositionManager,
         ISuperToken _acceptedToken,
         address _userAddress,
-        ISwapRouter _swapRouter) 
-    {
+        ISwapRouter _swapRouter
+    ) {
         nonfungiblePositionManager = _nonfungiblePositionManager;
         acceptedToken = _acceptedToken;
         userAddress = _userAddress;
         swapRouter = _swapRouter;
+
+        router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
 
         interval = 60;
         lastTimeStamp = block.timestamp;
@@ -150,24 +161,52 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
             amount1ToMint
         );
 
-        INonfungiblePositionManager.MintParams
-            memory params = INonfungiblePositionManager.MintParams({
-                token0: _token0,
-                token1: _token1,
-                fee: poolFee,
-                tickLower: TickMath.MIN_TICK,
-                tickUpper: TickMath.MAX_TICK,
-                amount0Desired: amount0ToMint,
-                amount1Desired: amount1ToMint,
-                amount0Min: 0,
-                amount1Min: 0,
-                recipient: address(this),
-                deadline: block.timestamp
-            });
+        IUniswapV3Pool pool = IUniswapV3Pool(nonfungiblePositionManager.createAndInitializePoolIfNecessary(_token0, _token1, poolFee, 1));
+        (, int24 tick, , , , , ) = pool.slot0();
+        
+        /*
+        AddLiquidityParams memory params = AddLiquidityParams({
+            token0: _token0,
+            token1: _token1,
+            fee: poolFee,
+            recipient: address(this),
+            tickLower: -1 * tick,
+            tickUpper: tick,
+            amount0Desired: amount0ToMint,
+            amount1Desired: amount1ToMint,
+            amount0Min: 0,
+            amount1Min: 0
+        });
+
+        addLiquidity(params);
+        */
+        
+
+
+
+    /*
+        INonfungiblePositionManager.MintParams memory params = INonfungiblePositionManager.MintParams({
+            token0: _token0,
+            token1: _token1,
+            fee: poolFee,
+            tickLower: -1 * tick,
+            tickUpper: tick,
+            amount0Desired: amount0ToMint,
+            amount1Desired: amount1ToMint,
+            amount0Min: 0,
+            amount1Min: 0,
+            recipient: address(this),
+            deadline: block.timestamp
+        });
+
+        
+        nonfungiblePositionManager.mint(params);
+        */
+
+
 
         // Note that the pool defined by fDAI/wrappedETH and fee tier 0.3% must already be created and initialized in order to mint
-        //nonfungiblePositionManager.mint(params);
-        (tokenId, liquidity, amount0, amount1) = nonfungiblePositionManager.mint(params);
+        //(tokenId, liquidity, amount0, amount1) = nonfungiblePositionManager.mint(params);
 
         // Create a deposit
         //_createDeposit(tokenId);
@@ -195,6 +234,25 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
             TransferHelper.safeTransfer(wrappedETH, msg.sender, refund1);
         }
         */
+    }
+
+    function provideLiquidity(uint256 amount0ToMint, uint256 amount1ToMint, address _token0, address _token1)
+        internal
+    {
+        // Approve the position manager
+        TransferHelper.safeApprove(
+            _token0,
+            address(router),
+            amount0ToMint
+        );
+        TransferHelper.safeApprove(
+            _token1,
+            address(router),
+            amount1ToMint
+        );
+
+        (uint amountA, uint amountB, uint liquidity) = router.addLiquidity(_token0, _token1, amount0ToMint, amount1ToMint, 0, 0, address(this), block.timestamp);
+        //emit LiquidityCreated(amountA, amountB, liquidity);
     }
 
     /// @notice Collects the fees associated with provided liquidity
@@ -435,8 +493,8 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
         bytes calldata /* performData */
     ) external override {
         // Revalidate the check (perform this function every __interval__ seconds)
-        //if ((block.timestamp - lastTimeStamp) > interval) {
-            //lastTimeStamp = block.timestamp;
+        if ((block.timestamp - lastTimeStamp) > interval) {
+            lastTimeStamp = block.timestamp;
 
             emit PerformUpkeep('Entered performUpkeep function', block.timestamp);
             acceptedToken.downgrade(acceptedToken.balanceOf(address(this))); // reverting here? only issue w/ maticx, not fDAIx
@@ -454,11 +512,12 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver {
             uint256 amountSwapped = swapExactInputSingle(underlyingToken, amountToSwap);
             emit Swapped('Swapped tokens', block.timestamp);
 
-            //(uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1) = mintNewPosition(amountToSwap, amountSwapped, underlyingToken, wrappedETH);
-            uint256 amtIn1 = 0.000001 * (10 ** 18);
-            uint256 amtIn2 = 0.000000000305729 * (10 ** 18);
-            (uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1) = mintNewPosition(amtIn1, amtIn2, underlyingToken, wrappedETH);
-            emit PosMinted('Minted Position', block.timestamp, tokenId);
-        //}
+            uint256 in1 = IERC20(underlyingToken).balanceOf(address(this));
+            uint256 in2 = IERC20(wrappedETH).balanceOf(address(this));
+
+            if (in1 > 0 && in2 > 0) {
+                provideLiquidity(in1, in2, underlyingToken, wrappedETH);
+            }
+        }
     }
 }

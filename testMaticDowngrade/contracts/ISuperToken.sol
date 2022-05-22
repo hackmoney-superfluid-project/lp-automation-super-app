@@ -22,8 +22,4 @@ interface ISuperToken is IERC20, IERC777 {
     function upgradeTo(address to, uint256 amount, bytes calldata data) external;
 
     function downgrade(uint256 amount) external;
-
-    function downgradeToETH(uint256 wad) external;
-
-    function upgradeByETH() external payable;
 }
