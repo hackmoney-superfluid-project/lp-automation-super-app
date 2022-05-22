@@ -3,10 +3,11 @@ const fs = require("fs");
 
 const iNonfungiblePositionManagerAddress = '0xC36442b4a4522E871399CD717aBDD847Ab11FE88';
 const iSwapRouterAddress = '0xE592427A0AEce92De3Edee1F18E0157C05861564';
+const iUniswapV2RouterAddress = '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D';
 
 const main = async () => {
   const UniswapFactory = await hre.ethers.getContractFactory("UniswapFactory");
-  const uniswapFactory = await UniswapFactory.deploy(iNonfungiblePositionManagerAddress, iSwapRouterAddress);
+  const uniswapFactory = await UniswapFactory.deploy(iNonfungiblePositionManagerAddress, iSwapRouterAddress, iUniswapV2RouterAddress);
   await uniswapFactory.deployed();
 
   console.log("UniswapFactory deployed to:", uniswapFactory.address);

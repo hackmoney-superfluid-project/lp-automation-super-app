@@ -20,10 +20,13 @@ import './IUniswapV2Router02.sol';
 
 //LiquidityManagement
 contract UserPosition is KeeperCompatibleInterface, IERC721Receiver  {
+
     /* --- Chain link --- */
     // Used to ensure that the upkeep is perfomed every __interval__ seconds
     uint256 public immutable interval;
     uint256 public lastTimeStamp;
+
+    /* --- Token Addresses --- */
     address public constant DAI = 0xc7AD46e0b8a400Bb3C915120d284AafbA8fc4735;
     address public constant fDAI = 0x15F0Ca26781C3852f8166eD2ebce5D18265cceb7;
     address public constant fDAIx = 0x745861AeD1EEe363b4AaA5F1994Be40b1e05Ff90;
@@ -33,15 +36,17 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver  {
     INonfungiblePositionManager public immutable nonfungiblePositionManager;
     ISwapRouter public immutable swapRouter;
 
-    /// @notice Represents the deposit of an NFT
+    // Stores a deposit of a token pair
     struct Deposit {
         uint128 liquidity;
         address token0;
         address token1;
+        uint256 amount0;
+        uint256 amount1;
     }
 
-    /// @dev deposits[tokenId] => Deposit
-    mapping(uint256 => Deposit) public deposits;
+    /// map second token of each pair to a deposit
+    mapping(address => Deposit) public deposits;
 
     // the accepted super token
     ISuperToken acceptedToken;
@@ -49,191 +54,24 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver  {
     // owner address
     address userAddress;
 
-    // new: router
+    // uniswap v2 router
     IUniswapV2Router02 router;
 
-    event PerformUpkeep(string message, uint256 timestamp);
-    event Downgraded(string message, uint256 timestamp);
-    event GetAmountToSwap(string message, uint256 amountToSwap, uint256 timestamp);
-    event Swapped(string message, uint256 timestamp);
-    event PosMinted(string message, uint256 timestamp, uint256 token);
-    event GotPool(string message, address add, int24 tic);
-
-    //PeripheryImmutableState(_factory, _WETH9)
-    //address _factory,
-    //address _WETH9
     constructor(
         INonfungiblePositionManager _nonfungiblePositionManager,
         ISuperToken _acceptedToken,
         address _userAddress,
-        ISwapRouter _swapRouter
+        ISwapRouter _swapRouter,
+        IUniswapV2Router02 _router
     ) {
         nonfungiblePositionManager = _nonfungiblePositionManager;
         acceptedToken = _acceptedToken;
         userAddress = _userAddress;
         swapRouter = _swapRouter;
-
-        router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
+        router = _router;
 
         interval = 60;
         lastTimeStamp = block.timestamp;
-    }
-    
-    // Implementing `onERC721Received` so this contract can receive custody of erc721 tokens
-    function onERC721Received(
-        address operator,
-        address,
-        uint256 tokenId,
-        bytes calldata
-    ) external override returns (bytes4) {
-        // get position information
-
-        _createDeposit(tokenId);
-
-        return this.onERC721Received.selector;
-    }
-
-    function _createDeposit(uint256 tokenId) internal {
-        (
-            ,
-            ,
-            address token0,
-            address token1,
-            ,
-            ,
-            ,
-            uint128 liquidity,
-            ,
-            ,
-            ,
-
-        ) = nonfungiblePositionManager.positions(tokenId);
-
-        // set the owner and data for position
-        // operator is msg.sender
-        deposits[tokenId] = Deposit({
-            liquidity: liquidity,
-            token0: token0,
-            token1: token1
-        });
-    }
-
-    /// @notice Calls the mint function defined in periphery, mints the same amount of each token.
-    /// For this example we are providing 1000 DAI and 1000 wrappedETH in liquidity
-    /// @return tokenId The id of the newly minted ERC721
-    /// @return liquidity The amount of liquidity for the position
-    /// @return amount0 The amount of token0
-    /// @return amount1 The amount of token1
-    function mintNewPosition(uint256 amount0ToMint, uint256 amount1ToMint, address _token0, address _token1)
-        internal
-        returns (
-            uint256 tokenId,
-            uint128 liquidity,
-            uint256 amount0,
-            uint256 amount1
-        )
-    {
-        // transfer tokens to contract
-        /*
-        TransferHelper.safeTransferFrom(
-            fDAI,
-            msg.sender,
-            address(this),
-            amount0ToMint
-        );
-        TransferHelper.safeTransferFrom(
-            wrappedETH,
-            msg.sender,
-            address(this),
-            amount1ToMint
-        );
-        */
-
-        // Approve the position manager
-        TransferHelper.safeApprove(
-            _token0,
-            address(nonfungiblePositionManager),
-            amount0ToMint
-        );
-        TransferHelper.safeApprove(
-            _token1,
-            address(nonfungiblePositionManager),
-            amount1ToMint
-        );
-
-        IUniswapV3Pool pool = IUniswapV3Pool(nonfungiblePositionManager.createAndInitializePoolIfNecessary(_token0, _token1, poolFee, 1));
-        (, int24 tick, , , , , ) = pool.slot0();
-        
-        /*
-        AddLiquidityParams memory params = AddLiquidityParams({
-            token0: _token0,
-            token1: _token1,
-            fee: poolFee,
-            recipient: address(this),
-            tickLower: -1 * tick,
-            tickUpper: tick,
-            amount0Desired: amount0ToMint,
-            amount1Desired: amount1ToMint,
-            amount0Min: 0,
-            amount1Min: 0
-        });
-
-        addLiquidity(params);
-        */
-        
-
-
-
-    /*
-        INonfungiblePositionManager.MintParams memory params = INonfungiblePositionManager.MintParams({
-            token0: _token0,
-            token1: _token1,
-            fee: poolFee,
-            tickLower: -1 * tick,
-            tickUpper: tick,
-            amount0Desired: amount0ToMint,
-            amount1Desired: amount1ToMint,
-            amount0Min: 0,
-            amount1Min: 0,
-            recipient: address(this),
-            deadline: block.timestamp
-        });
-
-        
-        nonfungiblePositionManager.mint(params);
-        */
-
-
-
-        // Note that the pool defined by fDAI/wrappedETH and fee tier 0.3% must already be created and initialized in order to mint
-        //(tokenId, liquidity, amount0, amount1) = nonfungiblePositionManager.mint(params);
-
-        // Create a deposit
-        //_createDeposit(tokenId);
-
-        // Remove allowance and refund in both assets.
-        // Dont think we need this because refunded amounts will just stay in the contract
-        /*
-        if (amount0 < amount0ToMint) {
-            TransferHelper.safeApprove(
-                fDAI,
-                address(nonfungiblePositionManager),
-                0
-            );
-            uint256 refund0 = amount0ToMint - amount0;
-            TransferHelper.safeTransfer(fDAI, msg.sender, refund0);
-        }
-
-        if (amount1 < amount1ToMint) {
-            TransferHelper.safeApprove(
-                wrappedETH,
-                address(nonfungiblePositionManager),
-                0
-            );
-            uint256 refund1 = amount1ToMint - amount1;
-            TransferHelper.safeTransfer(wrappedETH, msg.sender, refund1);
-        }
-        */
     }
 
     function provideLiquidity(uint256 amount0ToMint, uint256 amount1ToMint, address _token0, address _token1)
@@ -252,171 +90,26 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver  {
         );
 
         (uint amountA, uint amountB, uint liquidity) = router.addLiquidity(_token0, _token1, amount0ToMint, amount1ToMint, 0, 0, address(this), block.timestamp);
-        //emit LiquidityCreated(amountA, amountB, liquidity);
-    }
 
-    /// @notice Collects the fees associated with provided liquidity
-    /// @dev The contract must hold the erc721 token before it can collect fees
-    /// @param tokenId The id of the erc721 token
-    /// @return amount0 The amount of fees collected in token0
-    /// @return amount1 The amount of fees collected in token1
-    function collectAllFees(uint256 tokenId)
-        external
-        returns (uint256 amount0, uint256 amount1)
-    {
-        // Caller must own the ERC721 position, meaning it must be a deposit
-
-        // set amount0Max and amount1Max to uint256.max to collect all fees
-        // alternatively can set recipient to msg.sender and avoid another transaction in `sendToOwner`
-        INonfungiblePositionManager.CollectParams
-            memory params = INonfungiblePositionManager.CollectParams({
-                tokenId: tokenId,
-                recipient: address(this),
-                amount0Max: type(uint128).max,
-                amount1Max: type(uint128).max
+        // Update position if it already exists
+        if (deposits[_token1].token0 == _token0) {
+            deposits[_token1].amount0 += amountA;
+            deposits[_token1].amount1 += amountB;
+            // Would this work? : deposits[_token1].liquidity += liquidity;
+        } else {
+            deposits[_token1] = Deposit({
+                liquidity: liquidity,
+                token0: _token0,
+                token1: _token1,
+                amount0: amountA,
+                amount1: amountB
             });
-
-        (amount0, amount1) = nonfungiblePositionManager.collect(params);
-
-        // send collected feed back to owner
-        _sendToOwner(tokenId, amount0, amount1);
+        }
     }
 
-    /// @notice A function that decreases the current liquidity by half. An example to show how to call the `decreaseLiquidity` function defined in periphery.
-    /// @param tokenId The id of the erc721 token
-    /// @return amount0 The amount received back in token0
-    /// @return amount1 The amount returned back in token1
-    function decreaseLiquidityInHalf(uint256 tokenId)
-        external
-        returns (uint256 amount0, uint256 amount1)
-    {
-        // caller must be the owner of the NFT
-        require(msg.sender == userAddress, "Not the owner");
-        // get liquidity data for tokenId
-        uint128 liquidity = deposits[tokenId].liquidity;
-        uint128 halfLiquidity = liquidity / 2;
+    function swapExactInputSingle(address _tokenIn, address _tokenOut, uint256 amountIn) private returns (uint256 amountOut) {
 
-        // amount0Min and amount1Min are price slippage checks
-        // if the amount received after burning is not greater than these minimums, transaction will fail
-        INonfungiblePositionManager.DecreaseLiquidityParams
-            memory params = INonfungiblePositionManager
-                .DecreaseLiquidityParams({
-                    tokenId: tokenId,
-                    liquidity: halfLiquidity,
-                    amount0Min: 0,
-                    amount1Min: 0,
-                    deadline: block.timestamp
-                });
-
-        (amount0, amount1) = nonfungiblePositionManager.decreaseLiquidity(
-            params
-        );
-
-        //send liquidity back to owner
-        _sendToOwner(tokenId, amount0, amount1);
-    }
-
-    /// @notice Increases liquidity in the current range
-    /// @dev Pool must be initialized already to add liquidity
-    /// @param tokenId The id of the erc721 token
-    /// @param amount0 The amount to add of token0
-    /// @param amount1 The amount to add of token1
-    function increaseLiquidityCurrentRange(
-        uint256 tokenId,
-        uint256 amountAdd0,
-        uint256 amountAdd1
-    )
-        external
-        returns (
-            uint128 liquidity,
-            uint256 amount0,
-            uint256 amount1
-        )
-    {
-        // Downgrade supertokens
-        acceptedToken.downgrade(acceptedToken.balanceOf(address(this)));
-
-        TransferHelper.safeTransferFrom(
-            deposits[tokenId].token0,
-            msg.sender,
-            address(this),
-            amountAdd0
-        );
-        TransferHelper.safeTransferFrom(
-            deposits[tokenId].token1,
-            msg.sender,
-            address(this),
-            amountAdd1
-        );
-
-        TransferHelper.safeApprove(
-            deposits[tokenId].token0,
-            address(nonfungiblePositionManager),
-            amountAdd0
-        );
-        TransferHelper.safeApprove(
-            deposits[tokenId].token1,
-            address(nonfungiblePositionManager),
-            amountAdd1
-        );
-
-        INonfungiblePositionManager.IncreaseLiquidityParams
-            memory params = INonfungiblePositionManager
-                .IncreaseLiquidityParams({
-                    tokenId: tokenId,
-                    amount0Desired: amountAdd0,
-                    amount1Desired: amountAdd1,
-                    amount0Min: 0,
-                    amount1Min: 0,
-                    deadline: block.timestamp
-                });
-
-        (liquidity, amount0, amount1) = nonfungiblePositionManager
-            .increaseLiquidity(params);
-    }
-
-    /// @notice Transfers funds to owner of NFT
-    /// @param tokenId The id of the erc721
-    /// @param amount0 The amount of token0
-    /// @param amount1 The amount of token1
-    function _sendToOwner(
-        uint256 tokenId,
-        uint256 amount0,
-        uint256 amount1
-    ) internal {
-        // get owner of contract
-        address owner = userAddress;
-
-        address token0 = deposits[tokenId].token0;
-        address token1 = deposits[tokenId].token1;
-        // send collected fees to owner
-        TransferHelper.safeTransfer(token0, owner, amount0);
-        TransferHelper.safeTransfer(token1, owner, amount1);
-    }
-
-    /// @notice Transfers the NFT to the owner
-    /// @param tokenId The id of the erc721
-    function retrieveNFT(uint256 tokenId) external {
-        // must be the owner of the NFT
-        require(msg.sender == userAddress, "Not the owner");
-        // transfer ownership to original owner
-        nonfungiblePositionManager.safeTransferFrom(
-            address(this),
-            msg.sender,
-            tokenId
-        );
-        //remove information related to tokenId
-        delete deposits[tokenId];
-    }
-
-    /// @notice swapExactInputSingle swaps a fixed amount of fDAI for a maximum possible amount of wrappedETH
-    /// using the fDAI/wrappedETH 0.3% pool by calling `exactInputSingle` in the swap router.
-    /// @dev The calling address must approve this contract to spend at least `amountIn` worth of its fDAI for this function to succeed.
-    /// @param amountIn The exact amount of fDAI that will be swapped for wrappedETH.
-    /// @return amountOut The amount of wrappedETH received.
-    function swapExactInputSingle(address _tokenIn, uint256 amountIn) private returns (uint256 amountOut) {
-
-        // Approve the router to spend fDAI.
+        // Approve the router to spend first token
         TransferHelper.safeApprove(_tokenIn, address(swapRouter), amountIn);
 
         // Naively set amountOutMinimum to 0. In production, use an oracle or other data source to choose a safer value for amountOutMinimum.
@@ -437,44 +130,7 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver  {
         amountOut = swapRouter.exactInputSingle(params);
     }
 
-    /// @notice swapExactOutputSingle swaps a minimum possible amount of fDAI for a fixed amount of wrappedETH.
-    /// @dev The calling address must approve this contract to spend its fDAI for this function to succeed. As the amount of input fDAI is variable,
-    /// the calling address will need to approve for a slightly higher amount, anticipating some variance.
-    /// @param amountOut The exact amount of wrappedETH to receive from the swap.
-    /// @param amountInMaximum The amount of fDAI we are willing to spend to receive the specified amount of wrappedETH.
-    /// @return amountIn The amount of fDAI actually spent in the swap.
-    function swapExactOutputSingle(uint256 amountOut, uint256 amountInMaximum) private returns (uint256 amountIn) {
-        // Transfer the specified amount of fDAI to this contract.
-        TransferHelper.safeTransferFrom(fDAI, address(this), address(this), amountInMaximum);
-
-        // Approve the router to spend the specifed `amountInMaximum` of fDAI.
-        // In production, you should choose the maximum amount to spend based on oracles or other data sources to acheive a better swap.
-        TransferHelper.safeApprove(fDAI, address(swapRouter), amountInMaximum);
-
-        ISwapRouter.ExactOutputSingleParams memory params =
-            ISwapRouter.ExactOutputSingleParams({
-                tokenIn: fDAI,
-                tokenOut: wrappedETH,
-                fee: poolFee,
-                recipient: address(this),
-                deadline: block.timestamp,
-                amountOut: amountOut,
-                amountInMaximum: amountInMaximum,
-                sqrtPriceLimitX96: 0
-            });
-
-        // Executes the swap returning the amountIn needed to spend to receive the desired amountOut.
-        amountIn = swapRouter.exactOutputSingle(params);
-
-        // For exact output swaps, the amountInMaximum may not have all been spent.
-        // If the actual amount spent (amountIn) is less than the specified maximum amount, we must refund the msg.sender and approve the swapRouter to spend 0.
-        if (amountIn < amountInMaximum) {
-            TransferHelper.safeApprove(fDAI, address(swapRouter), 0);
-            TransferHelper.safeTransfer(fDAI, msg.sender, amountInMaximum - amountIn);
-        }
-    }
-
-    /* --- Chainlink keeper required functions (https://docs.chain.link/docs/chainlink-keepers/compatible-contracts/) --- */
+    /* --- Chainlink keeper required functions --- */
     function checkUpkeep(
         bytes calldata /* checkData */
     )
@@ -496,25 +152,18 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver  {
         if ((block.timestamp - lastTimeStamp) > interval) {
             lastTimeStamp = block.timestamp;
 
-            emit PerformUpkeep('Entered performUpkeep function', block.timestamp);
-            acceptedToken.downgrade(acceptedToken.balanceOf(address(this))); // reverting here? only issue w/ maticx, not fDAIx
-            emit Downgraded('Downgraded token', block.timestamp);
+            // downgrade super tokens
+            acceptedToken.downgrade(acceptedToken.balanceOf(address(this)));
 
-            /*address ffDAIAddress = 0xd393b1E02dA9831Ff419e22eA105aAe4c47E1253;
-            uint256 fDAIContractBalance = IERC20(ffDAIAddress).balanceOf(address(this));
-            uint256 amountToSwap = fDAIContractBalance / 2;*/
-
+            // get underlying token of super token and swap half with WETH
             address underlyingToken = acceptedToken.getUnderlyingToken();
             uint256 underlyingContractBalance = IERC20(underlyingToken).balanceOf(address(this));
             uint256 amountToSwap = underlyingContractBalance / 2;
-            emit GetAmountToSwap('Calculated amount to swap', amountToSwap, block.timestamp);
+            uint256 amountSwapped = swapExactInputSingle(underlyingToken, wrappedETH, amountToSwap);
 
-            uint256 amountSwapped = swapExactInputSingle(underlyingToken, amountToSwap);
-            emit Swapped('Swapped tokens', block.timestamp);
-
+            // Provide liquidity if contract has balance of both tokens
             uint256 in1 = IERC20(underlyingToken).balanceOf(address(this));
             uint256 in2 = IERC20(wrappedETH).balanceOf(address(this));
-
             if (in1 > 0 && in2 > 0) {
                 provideLiquidity(in1, in2, underlyingToken, wrappedETH);
             }
