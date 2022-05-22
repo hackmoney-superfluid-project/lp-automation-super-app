@@ -17,9 +17,10 @@ import '@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol';
 import './ISuperToken.sol';
 import './KeeperCompatibleInterface.sol';
 import './IUniswapV2Router02.sol';
+import './IUniswapV2Factory.sol';
 
 //LiquidityManagement
-contract UserPosition is KeeperCompatibleInterface, IERC721Receiver  {
+contract UserPosition  {
 
     /* --- Chain link --- */
     // Used to ensure that the upkeep is perfomed every __interval__ seconds
@@ -35,10 +36,12 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver  {
 
     INonfungiblePositionManager public immutable nonfungiblePositionManager;
     ISwapRouter public immutable swapRouter;
+    address private constant uniswapV2FactoryAddress = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f;
+    address private constant uniswapV2RouterAddress = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
 
     // Stores a deposit of a token pair
     struct Deposit {
-        uint128 liquidity;
+        uint256 liquidity;
         address token0;
         address token1;
         uint256 amount0;
@@ -56,6 +59,8 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver  {
 
     // uniswap v2 router
     IUniswapV2Router02 router;
+
+    event Log(string message, uint val);
 
     constructor(
         INonfungiblePositionManager _nonfungiblePositionManager,
@@ -107,6 +112,27 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver  {
         }
     }
 
+    function removeLiquidity(address _token0, address _token1) external {
+        address pair = IUniswapV2Factory(uniswapV2FactoryAddress).getPair(_token0, _token1);
+
+        uint256 liquidity = IERC20(pair).balanceOf(address(this));
+        IERC20(pair).approve(uniswapV2RouterAddress, liquidity);
+
+        (uint amountA, uint amountB) = 
+            router.removeLiquidity(
+                _token0,
+                _token1,
+                liquidity, 
+                0, 
+                0, 
+                address(this), 
+                block.timestamp
+            );
+        
+        emit Log('amountA', amountA);
+        emit Log('amountB', amountB);
+    }
+
     function swapExactInputSingle(address _tokenIn, address _tokenOut, uint256 amountIn) private returns (uint256 amountOut) {
 
         // Approve the router to spend first token
@@ -130,43 +156,21 @@ contract UserPosition is KeeperCompatibleInterface, IERC721Receiver  {
         amountOut = swapRouter.exactInputSingle(params);
     }
 
-    /* --- Chainlink keeper required functions --- */
-    function checkUpkeep(
-        bytes calldata /* checkData */
-    )
-        external
-        view
-        override
-        returns (
-            bool upkeepNeeded,
-            bytes memory /* performData */
-        )
-    {
-        upkeepNeeded = (block.timestamp - lastTimeStamp) > interval;
-    }
+    function maintainPosition() external {
+        // downgrade super tokens
+        acceptedToken.downgrade(acceptedToken.balanceOf(address(this)));
 
-    function performUpkeep(
-        bytes calldata /* performData */
-    ) external override {
-        // Revalidate the check (perform this function every __interval__ seconds)
-        if ((block.timestamp - lastTimeStamp) > interval) {
-            lastTimeStamp = block.timestamp;
+        // get underlying token of super token and swap half with WETH
+        address underlyingToken = acceptedToken.getUnderlyingToken();
+        uint256 underlyingContractBalance = IERC20(underlyingToken).balanceOf(address(this));
+        uint256 amountToSwap = underlyingContractBalance / 2;
+        uint256 amountSwapped = swapExactInputSingle(underlyingToken, wrappedETH, amountToSwap);
 
-            // downgrade super tokens
-            acceptedToken.downgrade(acceptedToken.balanceOf(address(this)));
-
-            // get underlying token of super token and swap half with WETH
-            address underlyingToken = acceptedToken.getUnderlyingToken();
-            uint256 underlyingContractBalance = IERC20(underlyingToken).balanceOf(address(this));
-            uint256 amountToSwap = underlyingContractBalance / 2;
-            uint256 amountSwapped = swapExactInputSingle(underlyingToken, wrappedETH, amountToSwap);
-
-            // Provide liquidity if contract has balance of both tokens
-            uint256 in1 = IERC20(underlyingToken).balanceOf(address(this));
-            uint256 in2 = IERC20(wrappedETH).balanceOf(address(this));
-            if (in1 > 0 && in2 > 0) {
-                provideLiquidity(in1, in2, underlyingToken, wrappedETH);
-            }
+        // Provide liquidity if contract has balance of both tokens
+        uint256 in1 = IERC20(underlyingToken).balanceOf(address(this));
+        uint256 in2 = IERC20(wrappedETH).balanceOf(address(this));
+        if (in1 > 0 && in2 > 0) {
+            provideLiquidity(in1, in2, underlyingToken, wrappedETH);
         }
     }
 }

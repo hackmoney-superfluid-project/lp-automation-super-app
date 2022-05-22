@@ -22,7 +22,7 @@ contract UniswapFactory {
     }
 
     function createUserPositionContract(ISuperToken acceptedToken, address userAddress) external returns (address) {
-        UserPosition pos = new UserPosition(nonfungiblePositionManager, acceptedToken, userAddress, iSwapRouter);
+        UserPosition pos = new UserPosition(nonfungiblePositionManager, acceptedToken, userAddress, iSwapRouter, iUniswapV2Router02);
         return address(pos);
     }
 }
