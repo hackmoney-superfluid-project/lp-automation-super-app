@@ -4,6 +4,7 @@ pragma abicoder v2;
 
 // Provide liquidity contracts
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
+import '@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol';
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/token/ERC777/IERC777.sol";
@@ -20,7 +21,7 @@ import './IUniswapV2Router02.sol';
 import './IUniswapV2Factory.sol';
 
 //LiquidityManagement
-contract UserPosition  {
+contract UserPosition is IERC721Receiver {
 
     /* --- Chain link --- */
     // Used to ensure that the upkeep is perfomed every __interval__ seconds
@@ -36,20 +37,18 @@ contract UserPosition  {
 
     INonfungiblePositionManager public immutable nonfungiblePositionManager;
     ISwapRouter public immutable swapRouter;
-    address private constant uniswapV2FactoryAddress = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f;
-    address private constant uniswapV2RouterAddress = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
+    //address private constant uniswapV2FactoryAddress = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f;
+    //address private constant uniswapV2RouterAddress = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
 
     // Stores a deposit of a token pair
     struct Deposit {
         uint256 liquidity;
         address token0;
         address token1;
-        uint256 amount0;
-        uint256 amount1;
     }
 
-    /// map second token of each pair to a deposit
-    mapping(address => Deposit) public deposits;
+    // map tokenid of position to the deposit
+    mapping(uint256 => Deposit) public deposits;
 
     // the accepted super token
     ISuperToken acceptedToken;
@@ -58,8 +57,12 @@ contract UserPosition  {
     address userAddress;
 
     // uniswap v2 router
-    IUniswapV2Router02 router;
+    //IUniswapV2Router02 router;
 
+    // v3 factory for getting pool
+    IUniswapV3Factory v3Factory;
+
+    // temp event for logging info
     event Log(string message, uint val);
 
     constructor(
@@ -67,18 +70,19 @@ contract UserPosition  {
         ISuperToken _acceptedToken,
         address _userAddress,
         ISwapRouter _swapRouter,
-        IUniswapV2Router02 _router
+        IUniswapV3Factory _v3Factory
     ) {
         nonfungiblePositionManager = _nonfungiblePositionManager;
         acceptedToken = _acceptedToken;
         userAddress = _userAddress;
         swapRouter = _swapRouter;
-        router = _router;
+        v3Factory = _v3Factory;
 
         interval = 60;
         lastTimeStamp = block.timestamp;
     }
 
+    /* UNI V2 --remove later
     function provideLiquidity(uint256 amount0ToMint, uint256 amount1ToMint, address _token0, address _token1)
         internal
     {
@@ -131,6 +135,57 @@ contract UserPosition  {
         
         emit Log('amountA', amountA);
         emit Log('amountB', amountB);
+    }*/
+
+    // implementing onERC721Received so this contract can receive custody of erc721 tokens
+    function onERC721Received(
+        address operator,
+        address,
+        uint256 tokenId,
+        bytes calldata
+    ) external override returns (bytes4) {
+        _createDeposit(tokenId);
+        return this.onERC721Received.selector;
+    }
+
+    // helper method for retreiving details of erc721 token and storing in deposits mapping
+    function _createDeposit(uint256 tokenId) internal {
+        (, , address token0, address token1, , , , uint128 liquidity, , , , ) = nonfungiblePositionManager.positions(tokenId);
+        deposits[tokenId] = Deposit({liquidity: liquidity, token0: token0, token1: token1});
+    }
+
+    // mint the position
+    function mintNewPosition(uint256 amount0ToMint, uint256 amount1ToMint, address _token0, address _token1) internal {
+
+        // Approve the position manager
+        TransferHelper.safeApprove(_token0, address(nonfungiblePositionManager), amount0ToMint);
+        TransferHelper.safeApprove(_token1, address(nonfungiblePositionManager), amount1ToMint);
+
+        // Get pool
+        IUniswapV3Pool pool = IUniswapV3Pool(v3Factory.getPool(_token0, _token1, poolFee));
+        int24 tickSpacing = pool.tickSpacing();
+
+        int24 lower = (TickMath.MIN_TICK / tickSpacing) * tickSpacing;
+        int24 upper = (TickMath.MAX_TICK / tickSpacing) * tickSpacing;
+
+        INonfungiblePositionManager.MintParams memory params =
+            INonfungiblePositionManager.MintParams({
+                token0: _token0,
+                token1: _token1,
+                fee: poolFee,
+                tickLower: lower,
+                tickUpper: upper,
+                amount0Desired: amount0ToMint,
+                amount1Desired: amount1ToMint,
+                amount0Min: 0,
+                amount1Min: 0,
+                recipient: address(this),
+                deadline: block.timestamp
+            });
+
+        (uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1) = nonfungiblePositionManager.mint(params);
+
+        _createDeposit(tokenId);
     }
 
     function swapExactInputSingle(address _tokenIn, address _tokenOut, uint256 amountIn) private returns (uint256 amountOut) {
@@ -170,7 +225,8 @@ contract UserPosition  {
         uint256 in1 = IERC20(underlyingToken).balanceOf(address(this));
         uint256 in2 = IERC20(wrappedETH).balanceOf(address(this));
         if (in1 > 0 && in2 > 0) {
-            provideLiquidity(in1, in2, underlyingToken, wrappedETH);
+            //provideLiquidity(in1, in2, underlyingToken, wrappedETH);
+            mintNewPosition(in1, in2, underlyingToken, wrappedETH);
         }
     }
 }
