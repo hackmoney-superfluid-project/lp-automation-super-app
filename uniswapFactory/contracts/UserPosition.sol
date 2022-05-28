@@ -132,7 +132,9 @@ contract UserPosition is IERC721Receiver {
                 address(this), 
                 block.timestamp
             );
-        
+
+        IERC20(_token0).transfer(userAddress, amountA);
+        IERC20(_token1).transfer(userAddress, amountB);
         emit Log('amountA', amountA);
         emit Log('amountB', amountB);
     }*/
