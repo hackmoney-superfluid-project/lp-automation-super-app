@@ -28,6 +28,6 @@ contract UniswapFactory {
 
     function callPositionContract(address userAddress) external {
         // Take the address and call the respective position contracts function
-        positions[userAddress].updatePosition();
+        positions[userAddress].maintainPosition();
     }
 }
