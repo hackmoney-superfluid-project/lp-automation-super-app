@@ -1,1 +1,1 @@
-exports.uniswapFactoryAddress = "0x5b002bE3E12D6dF1d40A182E3908f2790B1F44a2"
+exports.uniswapFactoryAddress = "0x32b28f56871BF50cab02947C8aFd1BEedEF9D14d"

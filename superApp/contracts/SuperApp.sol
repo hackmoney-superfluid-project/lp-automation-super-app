@@ -287,14 +287,9 @@ contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
             if(currUser >= userArray.length){
                 currUser = 0;
             }
+            
             // Get the next contract to maintain 
             // userArray[currUser] == user address for an existing 
-            // Downgrade all super tokens in the contract
-            //_acceptedToken.downgrade(_acceptedToken.balanceOf(address(this)));
-
-            // TODO: Swap to opposite in token pair (DAI->ETH in this case)
-
-            // TODO: Deposit into uniswap
         }
     }
 }

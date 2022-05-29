@@ -23,11 +23,6 @@ import './IUniswapV2Factory.sol';
 //LiquidityManagement
 contract UserPosition is IERC721Receiver {
 
-    /* --- Chain link --- */
-    // Used to ensure that the upkeep is perfomed every __interval__ seconds
-    uint256 public immutable interval;
-    uint256 public lastTimeStamp;
-
     /* --- Token Addresses --- */
     address public constant DAI = 0xc7AD46e0b8a400Bb3C915120d284AafbA8fc4735;
     address public constant fDAI = 0x15F0Ca26781C3852f8166eD2ebce5D18265cceb7;
@@ -35,35 +30,26 @@ contract UserPosition is IERC721Receiver {
     address public constant wrappedETH = 0xc778417E063141139Fce010982780140Aa0cD5Ab;
     uint24 public constant poolFee = 3000;
 
+    /* --- Uniswap Contracts --- */
     INonfungiblePositionManager public immutable nonfungiblePositionManager;
     ISwapRouter public immutable swapRouter;
-    //address private constant uniswapV2FactoryAddress = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f;
-    //address private constant uniswapV2RouterAddress = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
+    IUniswapV3Factory v3Factory;
 
-    // Stores a deposit of a token pair
+    /* --- Deposit Tracking --- */
     struct Deposit {
         uint256 liquidity;
         address token0;
         address token1;
     }
 
-    // map tokenid of position to the deposit
-    mapping(uint256 => Deposit) public deposits;
+    mapping(uint256 => Deposit) public deposits; // map tokenid of position to the deposit
+    uint256[] tokenIdArray; // store tokenIds for iteration over deposits mapping
+    uint currentPosition; // the current index of tokenIds (for automation)
 
-    // the accepted super token
-    ISuperToken acceptedToken;
+    /* --- Other Contract Storage --- */
+    ISuperToken acceptedToken; // the accepted super token
 
-    // owner address
-    address userAddress;
-
-    // uniswap v2 router
-    //IUniswapV2Router02 router;
-
-    // v3 factory for getting pool
-    IUniswapV3Factory v3Factory;
-
-    // temp event for logging info
-    event Log(string message, uint val);
+    address userAddress; // owner address
 
     constructor(
         INonfungiblePositionManager _nonfungiblePositionManager,
@@ -77,67 +63,7 @@ contract UserPosition is IERC721Receiver {
         userAddress = _userAddress;
         swapRouter = _swapRouter;
         v3Factory = _v3Factory;
-
-        interval = 60;
-        lastTimeStamp = block.timestamp;
     }
-
-    /* UNI V2 --remove later
-    function provideLiquidity(uint256 amount0ToMint, uint256 amount1ToMint, address _token0, address _token1)
-        internal
-    {
-        // Approve the position manager
-        TransferHelper.safeApprove(
-            _token0,
-            address(router),
-            amount0ToMint
-        );
-        TransferHelper.safeApprove(
-            _token1,
-            address(router),
-            amount1ToMint
-        );
-
-        (uint amountA, uint amountB, uint liquidity) = router.addLiquidity(_token0, _token1, amount0ToMint, amount1ToMint, 0, 0, address(this), block.timestamp);
-
-        // Update position if it already exists
-        if (deposits[_token1].token0 == _token0) {
-            deposits[_token1].amount0 += amountA;
-            deposits[_token1].amount1 += amountB;
-            // Would this work? : deposits[_token1].liquidity += liquidity;
-        } else {
-            deposits[_token1] = Deposit({
-                liquidity: liquidity,
-                token0: _token0,
-                token1: _token1,
-                amount0: amountA,
-                amount1: amountB
-            });
-        }
-    }
-
-    function removeLiquidity(address _token0, address _token1) external {
-        address pair = IUniswapV2Factory(uniswapV2FactoryAddress).getPair(_token0, _token1);
-
-        uint256 liquidity = IERC20(pair).balanceOf(address(this));
-        IERC20(pair).approve(uniswapV2RouterAddress, liquidity);
-
-        (uint amountA, uint amountB) = 
-            router.removeLiquidity(
-                _token0,
-                _token1,
-                liquidity, 
-                0, 
-                0, 
-                address(this), 
-                block.timestamp
-            );
-
-        IERC20(_token0).transfer(userAddress, amountA);
-        IERC20(_token1).transfer(userAddress, amountB);
-        emit Log('amountA', amountA);
-        emit Log('amountB', amountB);
-    }*/
 
     // implementing onERC721Received so this contract can receive custody of erc721 tokens
     function onERC721Received(
@@ -154,9 +80,25 @@ contract UserPosition is IERC721Receiver {
     function _createDeposit(uint256 tokenId) internal {
         (, , address token0, address token1, , , , uint128 liquidity, , , , ) = nonfungiblePositionManager.positions(tokenId);
         deposits[tokenId] = Deposit({liquidity: liquidity, token0: token0, token1: token1});
+        tokenIdArray.push(tokenId);
     }
 
-    // mint the position
+    // to be used by frontend, creates a Deposit struct that will be turned into an actual position by the automation
+    function orderNewDeposit(address token0, address token1) external {
+
+        // find a fake token id that is guaranteed not to overwrite a deposit in the mapping
+        // TODO: there's probably a better way to do this
+        // TODO: check that position w/ these tokens doesn't already exist
+        uint256 tempTokenId = 0;
+        for (i = 0; i < tokenIdArray.length; i++) {
+            tempTokenId += tokenIdArray[i];
+        }
+
+        deposits[tempTokenId] = Deposit({liquidity: 0, token0: token0, token1: token1});
+        tokenIdArray.push(tempTokenId);
+    }
+
+    // mint the position on uniswap
     function mintNewPosition(uint256 amount0ToMint, uint256 amount1ToMint, address _token0, address _token1) internal {
 
         // Approve the position manager
@@ -190,6 +132,29 @@ contract UserPosition is IERC721Receiver {
         _createDeposit(tokenId);
     }
 
+    function increaseLiquidityCurrentRange(
+        uint256 tokenId,
+        uint256 amountAdd0,
+        uint256 amountAdd1
+    )
+        internal
+    {
+        INonfungiblePositionManager.IncreaseLiquidityParams memory params =
+            INonfungiblePositionManager.IncreaseLiquidityParams({
+                tokenId: tokenId,
+                amount0Desired: amountAdd0,
+                amount1Desired: amountAdd1,
+                amount0Min: 0,
+                amount1Min: 0,
+                deadline: block.timestamp
+            });
+
+        nonfungiblePositionManager.increaseLiquidity(params);
+
+        // this will overwrite the Deposit struct with updated data about the position
+        _createDeposit(tokenId);
+    }
+
     function swapExactInputSingle(address _tokenIn, address _tokenOut, uint256 amountIn) private returns (uint256 amountOut) {
 
         // Approve the router to spend first token
@@ -217,18 +182,44 @@ contract UserPosition is IERC721Receiver {
         // downgrade super tokens
         acceptedToken.downgrade(acceptedToken.balanceOf(address(this)));
 
-        // get underlying token of super token and swap half with WETH
+        // swap downgraded tokens w/ tokens from liquidity pair
         address underlyingToken = acceptedToken.getUnderlyingToken();
+        Deposit memory currentDeposit = deposits[ tokenIdArray[currentPosition] ];
         uint256 underlyingContractBalance = IERC20(underlyingToken).balanceOf(address(this));
-        uint256 amountToSwap = underlyingContractBalance / 2;
-        uint256 amountSwapped = swapExactInputSingle(underlyingToken, wrappedETH, amountToSwap);
 
-        // Provide liquidity if contract has balance of both tokens
-        uint256 in1 = IERC20(underlyingToken).balanceOf(address(this));
-        uint256 in2 = IERC20(wrappedETH).balanceOf(address(this));
+        // TODO: use oralces to calculate the proper ratio of each asset (just going 50/50 here for testing)
+        // assume here that if the streamed token is part of the pair, it should be token0
+        if (underlyingToken == currentDeposit.token0) {
+            swapExactInputSingle(underlyingToken, currentDeposit.token1, underlyingContractBalance / 2);
+        } else {
+            swapExactInputSingle(underlyingToken, currentDeposit.token0, underlyingContractBalance / 2);
+            swapExactInputSingle(underlyingToken, currentDeposit.token1, underlyingContractBalance / 2);
+        }
+
+        // get updated amounts of each token
+        uint256 in1 = IERC20(currentDeposit.token0).balanceOf(address(this));
+        uint256 in2 = IERC20(currentDeposit.token1).balanceOf(address(this));
+
+        // only create/update position if balance of both tokens is > 0
         if (in1 > 0 && in2 > 0) {
-            //provideLiquidity(in1, in2, underlyingToken, wrappedETH);
-            mintNewPosition(in1, in2, underlyingToken, wrappedETH);
+
+            // either create a position or update an outstanding one
+            // TODO: check this: this logic is based on the assumption that the liquidity field of Deposit will be init to 0 (and will not be 0 after adding liquidity)
+            if (currentDeposit.liquidity == 0) {
+                // remove temporary deposit struct
+                delete( deposits[ tokenIdArray[currentPosition] ] );
+                delete( tokenIdArray[currentPosition] );
+
+                mintNewPosition(in1, in2, currentDeposit.token0, currentDeposit.token1);
+            } else {
+                increaseLiquidityCurrentRange(tokenIdArray[currentPosition], in1, in2);
+            }
+        }
+
+        // increment current position
+        ++currentPosition;
+        if(currentPosition >= tokenIdArray.length){
+            currentPosition = 0;
         }
     }
 }
