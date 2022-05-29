@@ -90,7 +90,7 @@ contract UserPosition is IERC721Receiver {
         // TODO: there's probably a better way to do this
         // TODO: check that position w/ these tokens doesn't already exist
         uint256 tempTokenId = 0;
-        for (i = 0; i < tokenIdArray.length; i++) {
+        for (uint i = 0; i < tokenIdArray.length; i++) {
             tempTokenId += tokenIdArray[i];
         }
 
