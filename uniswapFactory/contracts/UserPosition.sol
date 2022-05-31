@@ -139,19 +139,54 @@ contract UserPosition is IERC721Receiver {
         }
     }
 
-    // to be used by frontend, removes a uni v3 lp position
-    function removeUniswapV3LPDeposit(address token0, address token1) external {
+    // To be used by frontend, removes a uni v3 lp position
+    // Collects the fees associated with provided liquidity
+    // The contract must hold the erc721 token before it can collect fees
+    function removeUniswapV3LPDeposit(
+        address _token0,
+        address _token1
+    ) external returns (uint256 amount0, uint256 amount1) {
+        // Caller must own the ERC721 position, meaning it must be a deposit
+
         // compute hash
-        uint256 tokensHash = _computeHash(token0, token1);
+        uint256 tokenHash = _computeHash(_token0, _token1);
+        uint256 tokenId = deposits[tokenHash].tokenId;
 
         // check that position exists before removing liquidity
         if (deposits[tokensHash].token0 == token0) {
             // TODO: remove all liquidity
 
+            // set amount0Max and amount1Max to uint256.max to collect all fees
+            // alternatively can set recipient to msg.sender and avoid another transaction in `sendToOwner`
+            INonfungiblePositionManager.CollectParams memory params =
+                INonfungiblePositionManager.CollectParams({
+                    tokenId: tokenId,
+                    recipient: address(this),
+                    amount0Max: type(uint128).max,
+                    amount1Max: type(uint128).max
+                });
+
+            (amount0, amount1) = nonfungiblePositionManager.collect(params);
+
             // remove from mapping and hashArray
             delete (deposits[tokensHash]);
             // TODO: find way to safely remove hash from hashArray (find way to avoid unbounded gas)
+
+            // send collected feed back to owner
+            _sendToOwner(_token0, _token1, amount0, amount1);
         }
+    }
+
+    // Transfers funds to owner of NFT
+    function _sendToOwner(
+        address token0,
+        address token1,
+        uint256 amount0,
+        uint256 amount1
+    ) internal {
+        // send collected fees to owner
+        TransferHelper.safeTransfer(token0, userAddress, amount0);
+        TransferHelper.safeTransfer(token1, userAddress, amount1);
     }
 
     // to be used by frontend, creates a Deposit struct for a single swap DCA
