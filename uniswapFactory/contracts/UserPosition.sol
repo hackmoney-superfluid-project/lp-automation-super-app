@@ -52,7 +52,7 @@ contract UserPosition is IERC721Receiver {
     //uint256[] tokenIdArray; // store tokenIds for iteration over deposits mapping
     mapping(uint256 => Deposit) public deposits; // map (token0 + token1) to deposit
     uint256[] hashArray; // store hashes (token0 + token1) for iteration over deposits mapping
-    uint256 currentPosition; // the current index in the hashArray (for automation)
+    uint256 currentPosition = 0; // the current index in the hashArray (for automation)
 
     /* --- Other Contract Storage --- */
     ISuperToken acceptedToken; // the accepted super token
@@ -153,7 +153,7 @@ contract UserPosition is IERC721Receiver {
         uint256 tokenId = deposits[tokenHash].tokenId;
 
         // check that position exists before removing liquidity
-        if (deposits[tokensHash].token0 == token0) {
+        if (deposits[tokenHash].token0 == _token0) {
             // TODO: remove all liquidity
 
             // set amount0Max and amount1Max to uint256.max to collect all fees
@@ -169,7 +169,7 @@ contract UserPosition is IERC721Receiver {
             (amount0, amount1) = nonfungiblePositionManager.collect(params);
 
             // remove from mapping and hashArray
-            delete (deposits[tokensHash]);
+            delete (deposits[tokenHash]);
             // TODO: find way to safely remove hash from hashArray (find way to avoid unbounded gas)
 
             // send collected feed back to owner
@@ -391,12 +391,14 @@ contract UserPosition is IERC721Receiver {
         // downgrade super tokens
         acceptedToken.downgrade(acceptedToken.balanceOf(address(this)));
 
-        // get current deposit and perform action based on type
-        Deposit memory currentDeposit = deposits[hashArray[currentPosition]];
-        if (currentDeposit.depositType == DepositType.UNISWAPv3_LP) {
-            maintainUniswapV3LPPosition();
-        } else if (currentDeposit.depositType == DepositType.TOKEN) {
-            maintainTokenPosition();
+        // get current deposit and perform action based on type (if a deposit exists / is queued)
+        if (currentPosition < hashArray.length) {
+            Deposit memory currentDeposit = deposits[hashArray[currentPosition]];
+            if (currentDeposit.depositType == DepositType.UNISWAPv3_LP) {
+                maintainUniswapV3LPPosition();
+            } else if (currentDeposit.depositType == DepositType.TOKEN) {
+                maintainTokenPosition();
+            }
         }
 
         // increment current position
