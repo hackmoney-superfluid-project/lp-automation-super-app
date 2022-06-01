@@ -3,7 +3,7 @@
 # to run tests: 1) run this script 2) in a separate terminal, run "npx hardhat --network localhost test"
 
 # fDAIx address to unlock
-export testWalletAddress=0xFc25b7BE2945Dd578799D15EC5834Baf34BA28e1
+export testWalletAddress=0x888D08001F91D0eEc2f16364779697462A9A713D
 
 # gets all vars from .env
 set -o allexport

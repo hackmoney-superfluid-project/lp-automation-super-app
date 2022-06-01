@@ -6,7 +6,7 @@ const iNonfungiblePositionManagerAddress = '0xC36442b4a4522E871399CD717aBDD847Ab
 const iSwapRouterAddress = '0xE592427A0AEce92De3Edee1F18E0157C05861564';
 const iV3FactoryAddress = '0x1F98431c8aD98523631AE4a59f267346ea31F984';
 const fDAIxAddress = '0x745861AeD1EEe363b4AaA5F1994Be40b1e05Ff90';
-const testWalletAddress = '0xFc25b7BE2945Dd578799D15EC5834Baf34BA28e1';
+const testWalletAddress = '0x888D08001F91D0eEc2f16364779697462A9A713D';
 
 describe("UserPosition Tests", function () {
 
