@@ -154,8 +154,6 @@ contract UserPosition is IERC721Receiver {
 
         // check that position exists before removing liquidity
         if (deposits[tokenHash].token0 == _token0) {
-            // TODO: remove all liquidity
-
             // set amount0Max and amount1Max to uint256.max to collect all fees
             // alternatively can set recipient to msg.sender and avoid another transaction in `sendToOwner`
             INonfungiblePositionManager.CollectParams memory params =
