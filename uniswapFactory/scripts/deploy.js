@@ -5,9 +5,28 @@ const iNonfungiblePositionManagerAddress = '0xC36442b4a4522E871399CD717aBDD847Ab
 const iSwapRouterAddress = '0xE592427A0AEce92De3Edee1F18E0157C05861564';
 const iV3FactoryAddress = '0x1F98431c8aD98523631AE4a59f267346ea31F984';
 
+// fDAI
+const TOKEN_0 = "0x15F0Ca26781C3852f8166eD2ebce5D18265cceb7";
+// wETH
+const TOKEN_1 = "0xc778417E063141139Fce010982780140Aa0cD5Ab";
+
+const fee = 3000;
+
 const main = async () => {
+  const UniswapV3PriceOracle = await hre.ethers.getContractFactory("UniswapV3PriceOracle");
+  const uniswapV3PriceOracle = await UniswapV3PriceOracle.deploy(
+    iV3FactoryAddress,
+    TOKEN_0,
+    TOKEN_1,
+    fee);
+  await uniswapV3PriceOracle.deployed();
+
   const UniswapFactory = await hre.ethers.getContractFactory("UniswapFactory");
-  const uniswapFactory = await UniswapFactory.deploy(iNonfungiblePositionManagerAddress, iSwapRouterAddress, iV3FactoryAddress);
+  const uniswapFactory = await UniswapFactory.deploy(
+    iNonfungiblePositionManagerAddress,
+    iSwapRouterAddress,
+    iV3FactoryAddress,
+    uniswapV3PriceOracle.address);
   await uniswapFactory.deployed();
 
   console.log("UniswapFactory deployed to:", uniswapFactory.address);

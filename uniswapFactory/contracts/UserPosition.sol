@@ -19,6 +19,7 @@ import "./ISuperToken.sol";
 import "./KeeperCompatibleInterface.sol";
 import "./IUniswapV2Router02.sol";
 import "./IUniswapV2Factory.sol";
+import "./IUniswapV3PriceOracle.sol";
 
 //LiquidityManagement
 contract UserPosition is IERC721Receiver {
@@ -34,6 +35,7 @@ contract UserPosition is IERC721Receiver {
     INonfungiblePositionManager public immutable nonfungiblePositionManager;
     ISwapRouter public immutable swapRouter;
     IUniswapV3Factory v3Factory;
+    address uniswapV3PriceOracle;
 
     /* --- Deposit Tracking --- */
     enum DepositType {
@@ -64,13 +66,15 @@ contract UserPosition is IERC721Receiver {
         ISuperToken _acceptedToken,
         address _userAddress,
         ISwapRouter _swapRouter,
-        IUniswapV3Factory _v3Factory
+        IUniswapV3Factory _v3Factory,
+        address _uniswapV3PriceOracle
     ) {
         nonfungiblePositionManager = _nonfungiblePositionManager;
         acceptedToken = _acceptedToken;
         userAddress = _userAddress;
         swapRouter = _swapRouter;
         v3Factory = _v3Factory;
+        uniswapV3PriceOracle = _uniswapV3PriceOracle;
     }
 
     // implementing onERC721Received so this contract can receive custody of erc721 tokens
@@ -93,7 +97,7 @@ contract UserPosition is IERC721Receiver {
     }
 
     // gets number of deposits
-    function getNumDeposits() public view returns (uint) {
+    function getNumDeposits() public view returns (uint256) {
         return hashArray.length;
     }
 
@@ -147,10 +151,10 @@ contract UserPosition is IERC721Receiver {
     // To be used by frontend, removes a uni v3 lp position
     // Collects the fees associated with provided liquidity
     // The contract must hold the erc721 token before it can collect fees
-    function removeUniswapV3LPDeposit(
-        address _token0,
-        address _token1
-    ) external returns (uint256 amount0, uint256 amount1) {
+    function removeUniswapV3LPDeposit(address _token0, address _token1)
+        external
+        returns (uint256 amount0, uint256 amount1)
+    {
         // Caller must own the ERC721 position, meaning it must be a deposit
 
         // compute hash
@@ -161,8 +165,8 @@ contract UserPosition is IERC721Receiver {
         if (deposits[tokenHash].token0 == _token0) {
             // set amount0Max and amount1Max to uint256.max to collect all fees
             // alternatively can set recipient to msg.sender and avoid another transaction in `sendToOwner`
-            INonfungiblePositionManager.CollectParams memory params =
-                INonfungiblePositionManager.CollectParams({
+            INonfungiblePositionManager.CollectParams
+                memory params = INonfungiblePositionManager.CollectParams({
                     tokenId: tokenId,
                     recipient: address(this),
                     amount0Max: type(uint128).max,
@@ -303,12 +307,19 @@ contract UserPosition is IERC721Receiver {
     function swapExactInputSingle(
         address _tokenIn,
         address _tokenOut,
-        uint256 amountIn
+        uint256 _amountIn
     ) private returns (uint256 amountOut) {
         // Approve the router to spend first token
-        TransferHelper.safeApprove(_tokenIn, address(swapRouter), amountIn);
+        TransferHelper.safeApprove(_tokenIn, address(swapRouter), _amountIn);
 
-        // Naively set amountOutMinimum to 0. In production, use an oracle or other data source to choose a safer value for amountOutMinimum.
+        uint32 secondsIn = 10;
+        // TODO: _amountIn is a uint256 but the Uniswap function specifically takes a uint128. We should convert this or see if it's possible to pass in a uint256
+        uint256 price = UniswapV3PriceOracle(uniswapV3PriceOracle).estimateAmountOut(_tokenIn, _amountIn, secondsIn);
+        // TODO: We need to use the price from the price oracle to calculate amountOutMinimum
+        uint256 amountOutMinimum = 1;
+
+        // Naively set amountOutMinimum to 0. In production, this value should be calculated using the Uniswap SDK 
+        // or an onchain price oracle. This prevents losing funds from sandwich attacks and other forms of price manipulation
         // We also set the sqrtPriceLimitx96 to be 0 to ensure we swap our exact input amount.
         ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
             .ExactInputSingleParams({
@@ -317,8 +328,8 @@ contract UserPosition is IERC721Receiver {
                 fee: poolFee,
                 recipient: address(this),
                 deadline: block.timestamp,
-                amountIn: amountIn,
-                amountOutMinimum: 1,
+                amountIn: _amountIn,
+                amountOutMinimum: amountOutMinimum,
                 sqrtPriceLimitX96: 0
             });
 
@@ -340,7 +351,7 @@ contract UserPosition is IERC721Receiver {
             swapExactInputSingle(
                 underlyingToken,
                 currentDeposit.token1,
-                underlyingContractBalance / 2
+                underlyingContractBalance
             );
         } else {
             swapExactInputSingle(
@@ -396,7 +407,9 @@ contract UserPosition is IERC721Receiver {
 
         // get current deposit and perform action based on type (if a deposit exists / is queued)
         if (currentPosition < hashArray.length) {
-            Deposit memory currentDeposit = deposits[hashArray[currentPosition]];
+            Deposit memory currentDeposit = deposits[
+                hashArray[currentPosition]
+            ];
             if (currentDeposit.depositType == DepositType.UNISWAPv3_LP) {
                 maintainUniswapV3LPPosition();
             } else if (currentDeposit.depositType == DepositType.TOKEN) {
