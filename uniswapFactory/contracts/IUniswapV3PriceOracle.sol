@@ -1,4 +1,4 @@
-interface UniswapV3PriceOracle {
+interface IUniswapV3PriceOracle {
     function estimateAmountOut(
         address tokenIn,
         uint128 amountIn,
