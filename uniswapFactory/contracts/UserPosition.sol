@@ -92,6 +92,11 @@ contract UserPosition is IERC721Receiver {
         return uint256(token0) + uint256(token1);
     }
 
+    // gets number of deposits
+    function getNumDeposits() public view returns (uint) {
+        return hashArray.length;
+    }
+
     // helper method for retreiving details of erc721 token and storing in deposits mapping
     function _createDeposit(uint256 tokenId) internal {
         (
@@ -308,12 +313,12 @@ contract UserPosition is IERC721Receiver {
         ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
             .ExactInputSingleParams({
                 tokenIn: _tokenIn,
-                tokenOut: wrappedETH,
+                tokenOut: _tokenOut,
                 fee: poolFee,
                 recipient: address(this),
                 deadline: block.timestamp,
                 amountIn: amountIn,
-                amountOutMinimum: 0,
+                amountOutMinimum: 1,
                 sqrtPriceLimitX96: 0
             });
 
