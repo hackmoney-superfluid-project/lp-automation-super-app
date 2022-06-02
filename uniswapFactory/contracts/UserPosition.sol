@@ -314,7 +314,7 @@ contract UserPosition is IERC721Receiver {
 
         uint32 secondsIn = 10;
         // TODO: _amountIn is a uint256 but the Uniswap function specifically takes a uint128. We should convert this or see if it's possible to pass in a uint256
-        uint256 price = UniswapV3PriceOracle(uniswapV3PriceOracle).estimateAmountOut(_tokenIn, _amountIn, secondsIn);
+        uint256 price = UniswapV3PriceOracle(uniswapV3PriceOracle).estimateAmountOut(_tokenIn, _amountIn, secondsIn); // comment this out if needed
         // TODO: We need to use the price from the price oracle to calculate amountOutMinimum
         uint256 amountOutMinimum = 1;
 
@@ -402,8 +402,7 @@ contract UserPosition is IERC721Receiver {
     }
 
     function maintainPosition() external {
-        // downgrade super tokens
-        acceptedToken.downgrade(acceptedToken.balanceOf(address(this)));
+        downgradeToken();
 
         // get current deposit and perform action based on type (if a deposit exists / is queued)
         if (currentPosition < hashArray.length) {
@@ -422,5 +421,9 @@ contract UserPosition is IERC721Receiver {
         if (currentPosition >= hashArray.length) {
             currentPosition = 0;
         }
+    }
+
+    function downgradeToken() private {
+        acceptedToken.downgrade(acceptedToken.balanceOf(address(this)));
     }
 }

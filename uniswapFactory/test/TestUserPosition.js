@@ -65,7 +65,7 @@ describe("UserPosition Tests", function () {
             // Act
             await fDAIx_Contract.connect(testWallet_Signer).transfer(deployedUserPosition.address, 1000);
             await deployedUserPosition.connect(testWallet_Signer).orderNewUniswapV3LPDeposit(fDAIAddress, WETHAddress);
-            await deployedUserPosition.connect(testWallet_Signer).maintainPosition();
+            await deployedUserPosition.connect(testWallet_Signer).downgradeToken();
 
             // Assert
             const fDAIContractBalance = await fDAI_Contract.balanceOf(deployedUserPosition.address);
