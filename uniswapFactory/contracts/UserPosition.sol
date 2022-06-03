@@ -87,6 +87,7 @@ contract UserPosition is IERC721Receiver {
     // helper function to compute the hash for a given position
     function _computeHash(address token0, address token1)
         internal
+        pure
         returns (uint256)
     {
         return uint256(token0) + uint256(token1);
@@ -95,6 +96,12 @@ contract UserPosition is IERC721Receiver {
     // gets number of deposits
     function getNumDeposits() public view returns (uint) {
         return hashArray.length;
+    }
+
+    // gets deposit for specific token pair
+    function getDeposit(address token0, address token1) public view returns (Deposit memory) {
+        uint256 hash = _computeHash(token0, token1);
+        return deposits[hash];
     }
 
     // helper method for retreiving details of erc721 token and storing in deposits mapping
@@ -280,15 +287,29 @@ contract UserPosition is IERC721Receiver {
 
     function increaseLiquidityCurrentRange(
         uint256 tokenId,
-        uint256 amountAdd0,
-        uint256 amountAdd1
+        uint256 amount0ToAdd,
+        uint256 amount1ToAdd,
+        address _token0,
+        address _token1
     ) internal {
+        // Approve the position manager
+        TransferHelper.safeApprove(
+            _token0,
+            address(nonfungiblePositionManager),
+            amount0ToAdd
+        );
+        TransferHelper.safeApprove(
+            _token1,
+            address(nonfungiblePositionManager),
+            amount1ToAdd
+        );
+
         INonfungiblePositionManager.IncreaseLiquidityParams
             memory params = INonfungiblePositionManager
                 .IncreaseLiquidityParams({
                     tokenId: tokenId,
-                    amount0Desired: amountAdd0,
-                    amount1Desired: amountAdd1,
+                    amount0Desired: amount0ToAdd,
+                    amount1Desired: amount1ToAdd,
                     amount0Min: 0,
                     amount1Min: 0,
                     deadline: block.timestamp
@@ -370,7 +391,13 @@ contract UserPosition is IERC721Receiver {
                     currentDeposit.token1
                 );
             } else {
-                increaseLiquidityCurrentRange(currentDeposit.tokenId, in1, in2);
+                increaseLiquidityCurrentRange(
+                    currentDeposit.tokenId, 
+                    in1, 
+                    in2,
+                    currentDeposit.token0,
+                    currentDeposit.token1
+                );
             }
         }
     }
