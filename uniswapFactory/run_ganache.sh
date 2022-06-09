@@ -12,6 +12,6 @@ set +o allexport
 
 # to test on another chain, just swap the api key
 ganache-cli \
---fork $RINKEBY_ALCHEMY_KEY \
+--fork $MUMBAI_ALCHEMY_KEY \
 --unlock $testWalletAddress \
 --networkId 999

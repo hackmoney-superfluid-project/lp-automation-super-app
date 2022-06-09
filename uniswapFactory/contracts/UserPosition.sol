@@ -15,7 +15,9 @@ import "@uniswap/v3-periphery/contracts/base/LiquidityManagement.sol";
 // Swap contracts (swap functions also uses TransferHelper.sol from above imports)
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 
+import "./IWMATIC.sol";
 import "./ISuperToken.sol";
+import "./ISETH.sol";
 import "./KeeperCompatibleInterface.sol";
 import "./IUniswapV2Router02.sol";
 import "./IUniswapV2Factory.sol";
@@ -28,6 +30,7 @@ contract UserPosition is IERC721Receiver {
     address public constant fDAIx = 0x745861AeD1EEe363b4AaA5F1994Be40b1e05Ff90;
     address public constant wrappedETH =
         0xc778417E063141139Fce010982780140Aa0cD5Ab;
+    address public constant WMATIC = 0x9c3C9283D3e44854697Cd22D3Faa240Cfb032889;
     uint24 public constant poolFee = 3000;
 
     /* --- Uniswap Contracts --- */
@@ -42,26 +45,29 @@ contract UserPosition is IERC721Receiver {
     }
     struct Deposit {
         DepositType depositType;
-        uint256 liquidity;
+        uint128 liquidity;
         address token0;
         address token1;
         uint256 tokenId;
     }
 
-    //mapping(uint256 => Deposit) public deposits; // map tokenid of position to the deposit
-    //uint256[] tokenIdArray; // store tokenIds for iteration over deposits mapping
-    mapping(uint256 => Deposit) public deposits; // map (token0 + token1) to deposit
-    uint256[] hashArray; // store hashes (token0 + token1) for iteration over deposits mapping
-    uint256 currentPosition = 0; // the current index in the hashArray (for automation)
+    /* map hash (token0 + token1) to deposit */
+    mapping(uint256 => Deposit) public deposits;
+    /* store hashes (token0 + token1) for iteration over deposits mapping */
+    uint256[] hashArray; 
+    /* map hash (token0 + token1) to index in hashArray for O(1) removal from hashArray */
+    mapping(uint256 => uint256) public hashArrayIndices;
+    /* the current index in the hashArray (for automation) */
+    uint256 currentPosition = 0; 
 
     /* --- Other Contract Storage --- */
-    ISuperToken acceptedToken; // the accepted super token
+    ISETH acceptedToken; // the accepted super token
 
     address userAddress; // owner address
 
     constructor(
         INonfungiblePositionManager _nonfungiblePositionManager,
-        ISuperToken _acceptedToken,
+        ISETH _acceptedToken,
         address _userAddress,
         ISwapRouter _swapRouter,
         IUniswapV3Factory _v3Factory
@@ -121,33 +127,68 @@ contract UserPosition is IERC721Receiver {
 
         ) = nonfungiblePositionManager.positions(tokenId);
         uint256 tokensHash = _computeHash(token0, token1);
-        deposits[tokensHash] = Deposit({
-            depositType: DepositType.UNISWAPv3_LP, //TODO: fix hardcoding
-            liquidity: liquidity,
-            token0: token0,
-            token1: token1,
-            tokenId: tokenId
-        });
-        hashArray.push(tokensHash);
+
+        // we are just overwriting an existing deposit here
+        deposits[tokensHash].liquidity = liquidity;
+        deposits[tokensHash].token0 = token0;
+        deposits[tokensHash].token1 = token1;
+        deposits[tokensHash].tokenId = tokenId;
     }
 
-    // to be used by frontend, creates a Deposit struct that will be turned into an actual position by the automation
-    function orderNewUniswapV3LPDeposit(address token0, address token1)
-        external
+    // helper method for ordering deposits
+    function orderNewDeposit(DepositType depositType, address token0, address token1) 
+        internal 
     {
         // compute hash
         uint256 tokensHash = _computeHash(token0, token1);
 
         // check that position doesn't already exist
         if (deposits[tokensHash].token0 == address(0)) {
+
+            // store new deposit in mapping and maintain circularly linked list
             deposits[tokensHash] = Deposit({
-                depositType: DepositType.UNISWAPv3_LP,
+                depositType: depositType,
                 liquidity: 0,
                 token0: token0,
                 token1: token1,
                 tokenId: 0
             });
+            
+            // update hashArray and hashArrayIndices map
+            hashArrayIndices[tokensHash] = hashArray.length;
             hashArray.push(tokensHash);
+        }
+    }
+
+    // to be used by frontend, creates a Deposit struct that will be turned into an actual position by the automation
+    function orderNewUniswapV3LPDeposit(address token0, address token1)
+        external
+    {
+        orderNewDeposit(DepositType.UNISWAPv3_LP, token0, token1);
+    }
+
+    // to be used both internally and externally, collects all fees for a given position
+    function collectFees(address token0, address token1, bool sendToUser) 
+        public
+        returns (uint256 amount0, uint256 amount1) 
+    {
+
+        // compute hash
+        uint256 tokenHash = _computeHash(token0, token1);
+        uint256 tokenId = deposits[tokenHash].tokenId;
+
+        // check that position exists before trying to collect fees
+        if (deposits[tokenHash].token0 == token0) {
+            // set amount0Max and amount1Max to uint256.max to collect all fees
+            INonfungiblePositionManager.CollectParams memory params =
+                INonfungiblePositionManager.CollectParams({
+                    tokenId: tokenId,
+                    recipient: sendToUser ? userAddress : address(this),
+                    amount0Max: type(uint128).max,
+                    amount1Max: type(uint128).max
+                });
+
+            (amount0, amount1) = nonfungiblePositionManager.collect(params);
         }
     }
 
@@ -155,35 +196,45 @@ contract UserPosition is IERC721Receiver {
     // Collects the fees associated with provided liquidity
     // The contract must hold the erc721 token before it can collect fees
     function removeUniswapV3LPDeposit(
-        address _token0,
-        address _token1
+        address token0,
+        address token1
     ) external returns (uint256 amount0, uint256 amount1) {
-        // Caller must own the ERC721 position, meaning it must be a deposit
 
         // compute hash
-        uint256 tokenHash = _computeHash(_token0, _token1);
+        uint256 tokenHash = _computeHash(token0, token1);
         uint256 tokenId = deposits[tokenHash].tokenId;
 
         // check that position exists before removing liquidity
-        if (deposits[tokenHash].token0 == _token0) {
-            // set amount0Max and amount1Max to uint256.max to collect all fees
-            // alternatively can set recipient to msg.sender and avoid another transaction in `sendToOwner`
-            INonfungiblePositionManager.CollectParams memory params =
-                INonfungiblePositionManager.CollectParams({
+        if (deposits[tokenHash].token0 == token0) {
+            
+            // collect fees
+            (uint amount0Fees, uint amount1Fees) = collectFees(token0, token1, false);
+
+            // remove all liquidity
+            // amount0Min and amount1Min are price slippage checks
+            // if the amount received after burning is not greater than these minimums, transaction will fail
+            // TODO: calculate appropriate values for amount0Min and amount1Min
+            INonfungiblePositionManager.DecreaseLiquidityParams memory params =
+                INonfungiblePositionManager.DecreaseLiquidityParams({
                     tokenId: tokenId,
-                    recipient: address(this),
-                    amount0Max: type(uint128).max,
-                    amount1Max: type(uint128).max
+                    liquidity: deposits[tokenHash].liquidity,
+                    amount0Min: 0,
+                    amount1Min: 0,
+                    deadline: block.timestamp
                 });
 
-            (amount0, amount1) = nonfungiblePositionManager.collect(params);
+            (uint amount0Liquidity, uint amount1Liquidity) = nonfungiblePositionManager.decreaseLiquidity(params);
 
-            // remove from mapping and hashArray
-            delete (deposits[tokenHash]);
-            // TODO: find way to safely remove hash from hashArray (find way to avoid unbounded gas)
+            // remove deposit from mapping and hashArray
+            delete(deposits[tokenHash]);
+            delete(hashArray[hashArrayIndices[tokenHash]]);
 
-            // send collected feed back to owner
-            _sendToOwner(_token0, _token1, amount0, amount1);
+            // send entire contract ballance of each collected fees back to owner
+            _sendToOwner(token0, token1, IERC20(token0).balanceOf(address(this)), IERC20(token1).balanceOf(address(this)));
+
+            // return fees + liquidity
+            amount0 = amount0Fees + amount0Liquidity;
+            amount1 = amount1Fees + amount1Liquidity;
         }
     }
 
@@ -201,20 +252,7 @@ contract UserPosition is IERC721Receiver {
 
     // to be used by frontend, creates a Deposit struct for a single swap DCA
     function orderNewTokenDeposit(address token0) external {
-        // compute hash
-        uint256 tokenHash = _computeHash(token0, address(0));
-
-        // check that position doesn't already exist
-        if (deposits[tokenHash].token0 == address(0)) {
-            deposits[tokenHash] = Deposit({
-                depositType: DepositType.TOKEN,
-                liquidity: 0,
-                token0: token0,
-                token1: address(0),
-                tokenId: 0
-            });
-            hashArray.push(tokenHash);
-        }
+        orderNewDeposit(DepositType.TOKEN, token0, address(0));
     }
 
     // to be used by frontend, removes a uni v3 lp position
@@ -274,7 +312,6 @@ contract UserPosition is IERC721Receiver {
                 recipient: address(this),
                 deadline: block.timestamp
             });
-
         (
             uint256 tokenId,
             uint128 liquidity,
@@ -321,6 +358,15 @@ contract UserPosition is IERC721Receiver {
         _createDeposit(tokenId);
     }
 
+    // helper function for getting balance of token
+    function _getTokenBalance(address token) internal returns (uint256 balance) {
+        if (token == address(0)) {
+            balance = address(this).balance;
+        } else {
+            balance = IERC20(token).balanceOf(address(this));
+        }
+    }
+
     function swapExactInputSingle(
         address _tokenIn,
         address _tokenOut,
@@ -339,7 +385,7 @@ contract UserPosition is IERC721Receiver {
                 recipient: address(this),
                 deadline: block.timestamp,
                 amountIn: amountIn,
-                amountOutMinimum: 1,
+                amountOutMinimum: 0,
                 sqrtPriceLimitX96: 0
             });
 
@@ -350,10 +396,15 @@ contract UserPosition is IERC721Receiver {
     function maintainUniswapV3LPPosition() internal {
         // swap downgraded tokens w/ tokens from liquidity pair
         address underlyingToken = acceptedToken.getUnderlyingToken();
+
+        // if underlyingToken is matic, wrap it and update the var
+        if (underlyingToken == address(0)) {
+            IWMATIC(WMATIC).deposit{value: address(this).balance}();
+            underlyingToken = WMATIC;
+        }
+
         Deposit memory currentDeposit = deposits[hashArray[currentPosition]];
-        uint256 underlyingContractBalance = IERC20(underlyingToken).balanceOf(
-            address(this)
-        );
+        uint256 underlyingContractBalance = _getTokenBalance(underlyingToken);
 
         // TODO: use oralces to calculate the proper ratio of each asset (just going 50/50 here for testing)
         // assume here that if the streamed token is part of the pair, it should be token0
@@ -375,11 +426,11 @@ contract UserPosition is IERC721Receiver {
                 underlyingContractBalance / 2
             );
         }
-
+        
         // get updated amounts of each token
-        uint256 in1 = IERC20(currentDeposit.token0).balanceOf(address(this));
-        uint256 in2 = IERC20(currentDeposit.token1).balanceOf(address(this));
-
+        uint256 in1 = _getTokenBalance(currentDeposit.token0);
+        uint256 in2 = _getTokenBalance(currentDeposit.token1);
+        
         // only create/update position if balance of both tokens is > 0
         if (in1 > 0 && in2 > 0) {
             // either create a position or update an outstanding one
@@ -406,9 +457,7 @@ contract UserPosition is IERC721Receiver {
         // swap all downgraded tokens with token0 of the deposit
         address underlyingToken = acceptedToken.getUnderlyingToken();
         Deposit memory currentDeposit = deposits[hashArray[currentPosition]];
-        uint256 underlyingContractBalance = IERC20(underlyingToken).balanceOf(
-            address(this)
-        );
+        uint256 underlyingContractBalance = _getTokenBalance(underlyingToken);
 
         swapExactInputSingle(
             underlyingToken,
@@ -417,9 +466,18 @@ contract UserPosition is IERC721Receiver {
         );
     }
 
+    // fix for MATICx downgrade
+    receive() external payable { 
+        // do nothing here
+    }
+
     function maintainPosition() external {
-        // downgrade super tokens
-        acceptedToken.downgrade(acceptedToken.balanceOf(address(this)));
+        // downgrade super tokens (use downgradeToETH if 0x0 address)
+        if (acceptedToken.getUnderlyingToken() == address(0)) {
+            acceptedToken.downgradeToETH(acceptedToken.balanceOf(address(this)));
+        } else {
+            acceptedToken.downgrade(acceptedToken.balanceOf(address(this)));
+        }
 
         // get current deposit and perform action based on type (if a deposit exists / is queued)
         if (currentPosition < hashArray.length) {

@@ -17,7 +17,7 @@ require("dotenv").config();
   },
   networks: {
     mumbai: {
-      url: process.env.ALCHEMY_KEY,
+      url: process.env.MUMBAI_ALCHEMY_KEY,
       accounts: [process.env.PRIVATE_KEY],
     },
     rinkeby: {

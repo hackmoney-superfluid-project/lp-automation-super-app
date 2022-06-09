@@ -21,7 +21,7 @@ contract UniswapFactory {
         iV3Factory = _iV3Factory;
     }
 
-    function createUserPositionContract(ISuperToken acceptedToken, address userAddress) external returns (address) {
+    function createUserPositionContract(ISETH acceptedToken, address userAddress) external returns (address) {
         UserPosition pos = new UserPosition(nonfungiblePositionManager, acceptedToken, userAddress, iSwapRouter, iV3Factory);
         return address(pos);
     }
