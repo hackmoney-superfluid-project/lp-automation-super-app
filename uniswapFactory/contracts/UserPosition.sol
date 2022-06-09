@@ -314,7 +314,8 @@ contract UserPosition is IERC721Receiver {
 
         uint32 secondsIn = 10;
         // TODO: _amountIn is a uint256 but the Uniswap function specifically takes a uint128. We should convert this or see if it's possible to pass in a uint256
-        uint256 price = UniswapV3PriceOracle(uniswapV3PriceOracle).estimateAmountOut(_tokenIn, _amountIn, secondsIn); // comment this out if needed
+        uint256 price = IUniswapV3PriceOracle(uniswapV3PriceOracle).estimateAmountOut(_tokenIn, uint128(_amountIn), secondsIn); // comment this out if needed
+
         // TODO: We need to use the price from the price oracle to calculate amountOutMinimum
         uint256 amountOutMinimum = 1;
 
