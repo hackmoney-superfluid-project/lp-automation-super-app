@@ -167,6 +167,8 @@ contract UserPosition is IERC721Receiver {
         orderNewDeposit(DepositType.UNISWAPv3_LP, token0, token1);
     }
 
+    event collectionAmounts(uint256 amnt1, uint256 amnt2);
+
     // to be used both internally and externally, collects all fees for a given position
     function collectFees(address token0, address token1, bool sendToUser) 
         public
@@ -189,6 +191,7 @@ contract UserPosition is IERC721Receiver {
                 });
 
             (amount0, amount1) = nonfungiblePositionManager.collect(params);
+            emit collectionAmounts(amount0, amount1);
         }
     }
 
@@ -404,6 +407,11 @@ contract UserPosition is IERC721Receiver {
         }
 
         Deposit memory currentDeposit = deposits[hashArray[currentPosition]];
+
+        if (currentDeposit.token0 == address(0)) {
+            currentDeposit.token0 = WMATIC;
+        }
+
         uint256 underlyingContractBalance = _getTokenBalance(underlyingToken);
 
         // TODO: use oralces to calculate the proper ratio of each asset (just going 50/50 here for testing)

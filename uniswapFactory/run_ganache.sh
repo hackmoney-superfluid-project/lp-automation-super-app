@@ -4,6 +4,7 @@
 
 # fDAIx address to unlock
 export testWalletAddress=0x888D08001F91D0eEc2f16364779697462A9A713D
+export testWalletAddress2=0xFc25b7BE2945Dd578799D15EC5834Baf34BA28e1
 
 # gets all vars from .env
 set -o allexport
@@ -14,4 +15,5 @@ set +o allexport
 ganache-cli \
 --fork $MUMBAI_ALCHEMY_KEY \
 --unlock $testWalletAddress \
+--unlock $testWalletAddress2 \
 --networkId 999
