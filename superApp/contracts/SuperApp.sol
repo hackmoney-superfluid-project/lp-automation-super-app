@@ -8,7 +8,6 @@ import {IConstantFlowAgreementV1} from "@superfluid-finance/ethereum-contracts/c
 
 // import sub contract for user positions
 //import "./UserPosition.sol";
-import "./testContract.sol";
 
 /* Uniswap required contracts */
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
