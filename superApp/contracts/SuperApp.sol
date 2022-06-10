@@ -71,7 +71,7 @@ interface IUniswapFactory {
     function callPositionContract(address userAddress) external;
 }
 
-contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
+contract SuperApp is KeeperCompatibleInterface, SuperAppBase {
     /* --- Chain link --- */
     // Used to ensure that the upkeep is perfomed every __interval__ seconds
     uint256 public immutable interval;
