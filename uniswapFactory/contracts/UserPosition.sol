@@ -17,8 +17,6 @@ import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 
 import "./ISuperToken.sol";
 import "./KeeperCompatibleInterface.sol";
-import "./IUniswapV2Router02.sol";
-import "./IUniswapV2Factory.sol";
 
 //LiquidityManagement
 contract UserPosition is IERC721Receiver {
