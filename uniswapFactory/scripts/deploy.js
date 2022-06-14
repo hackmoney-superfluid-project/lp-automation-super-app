@@ -14,11 +14,7 @@ const fee = 3000;
 
 const main = async () => {
   const UniswapV3PriceOracle = await hre.ethers.getContractFactory("UniswapV3PriceOracle");
-  const uniswapV3PriceOracle = await UniswapV3PriceOracle.deploy(
-    iV3FactoryAddress,
-    TOKEN_0,
-    TOKEN_1,
-    fee);
+  const uniswapV3PriceOracle = await UniswapV3PriceOracle.deploy(iV3FactoryAddress);
   await uniswapV3PriceOracle.deployed();
 
   const UniswapFactory = await hre.ethers.getContractFactory("UniswapFactory");
