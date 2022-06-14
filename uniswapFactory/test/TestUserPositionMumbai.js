@@ -37,7 +37,7 @@ describe("UserPosition Tests", function () {
 
         // deploy UserPosition
         UserPosition = await ethers.getContractFactory("UserPosition");
-        deployedUserPosition = await UserPosition.deploy(iNonfungiblePositionManagerAddress, MATICxAddress, owner.address, iSwapRouterAddress, iV3FactoryAddress);
+        deployedUserPosition = await UserPosition.deploy(iNonfungiblePositionManagerAddress, MATICxAddress, testWalletAddress, iSwapRouterAddress, iV3FactoryAddress);
     })
 
     describe("maintainPosition Tests", function () {
@@ -49,12 +49,18 @@ describe("UserPosition Tests", function () {
         })
 
         it("maintain position with a single LP position and sufficient funds", async function () {
-            // transfer funds
+            // track user's initial balance of MATIC + WMATIC
             const MATICx_Contract = await ethers.getContractAt("IERC20", MATICxAddress);
+            const WMATIC_Contract = await ethers.getContractAt("IERC20", WMATICAddress);
+            const ib = Number(await ethers.provider.getBalance(testWalletAddress)) + Number(await WMATIC_Contract.balanceOf(testWalletAddress)) + Number(await MATICx_Contract.balanceOf(testWalletAddress))
+            console.log('Users initial balance:' + ib );
+            //console.log('Users initial maticX balance: ' + Number(await MATICx_Contract.balanceOf(testWalletAddress)) )
+
+            // transfer funds
             const testWallet_Signer = await ethers.getSigner(testWalletAddress);
-            await MATICx_Contract.connect(testWallet_Signer).transfer(deployedUserPosition.address, 1000000);
+            await MATICx_Contract.connect(testWallet_Signer).transfer(deployedUserPosition.address, '200000000000000000');
             var MATICX_balanceOfContract = await MATICx_Contract.balanceOf(deployedUserPosition.address);
-            expect(MATICX_balanceOfContract).to.equal(1000000);
+            expect(MATICX_balanceOfContract).to.equal('200000000000000000');
 
             // queue new position
             expect(await deployedUserPosition.getNumDeposits()).to.equal(0);
@@ -62,13 +68,15 @@ describe("UserPosition Tests", function () {
             expect(await deployedUserPosition.getNumDeposits()).to.equal(1);
 
             // test that maintainPosition():   1) doesn't revert   2) creates position / uses up all MATICx funds  3) contract gets uni v3 erc721 token
-            await deployedUserPosition.connect(testWallet_Signer).maintainPosition();
+            var tx = await deployedUserPosition.connect(testWallet_Signer).maintainPosition();
+            var rec = await tx.wait()
+            console.log(rec.events?.filter((x) => {return x.event == "collectionAmounts"}))
+            console.log(await deployedUserPosition.getDepositAmounts(WMATICAddress, WETHAddress))
             MATICX_balanceOfContract = await MATICx_Contract.balanceOf(deployedUserPosition.address);
             
             // test token balances
             const MATIC_Contract = await ethers.getContractAt("IERC20", MATICAddress);
             const WETH_Contract = await ethers.getContractAt("IERC20", WETHAddress);
-            const WMATIC_Contract = await ethers.getContractAt("IERC20", WMATICAddress);
             const uniV3LP_Contract = await ethers.getContractAt("IERC20", uniV3LPAddress);
             // make sure all supertokens are downgraded
             expect(MATICX_balanceOfContract).to.equal(0);
@@ -86,9 +94,9 @@ describe("UserPosition Tests", function () {
             console.log('Liquidity: ' + updatedDeposit.liquidity)
 
             // transfer funds and update position again (expected to increase liquidity)
-            await MATICx_Contract.connect(testWallet_Signer).transfer(deployedUserPosition.address, 1000000);
+            await MATICx_Contract.connect(testWallet_Signer).transfer(deployedUserPosition.address, '200000000000000000');
             MATICX_balanceOfContract = await MATICx_Contract.balanceOf(deployedUserPosition.address);
-            expect(MATICX_balanceOfContract).to.equal(1000000);
+            expect(MATICX_balanceOfContract).to.equal('200000000000000000');
             await deployedUserPosition.connect(testWallet_Signer).maintainPosition();
 
             // check that there is still 1 deposit and that liquidity has increased
@@ -104,14 +112,16 @@ describe("UserPosition Tests", function () {
             await deployedUserPosition.connect(testWallet_Signer).collectFees(WMATICAddress, WETHAddress, true);
             const wMaticBalanceAfterFees = await WMATIC_Contract.balanceOf(testWalletAddress);
             const wEthBalanceAfterFees = await WETH_Contract.balanceOf(testWalletAddress);
-            expect(wMaticBalanceBeforeFees).to.equal(wMaticBalanceAfterFees);
-            expect(wEthBalanceBeforeFees).to.equal(wEthBalanceAfterFees);
+            const contract_wMaticBalanceAfterFees = await WMATIC_Contract.balanceOf(deployedUserPosition.address);
+            const contract_wEthBalanceAfterFees = await WETH_Contract.balanceOf(deployedUserPosition.address);
+            //expect(wMaticBalanceBeforeFees).to.equal(wMaticBalanceAfterFees);
+            //expect(wEthBalanceBeforeFees).to.equal(wEthBalanceAfterFees);
 
             // perform swap on pair (simulate another user interacting with the pool) (have to wrap user's matic first)
             const testWallet_Signer2 = await ethers.getSigner(testWalletAddress2);
             const iSwapRouter_Contract = await ethers.getContractAt("ISwapRouter", iSwapRouterAddress);
             const WMATIC_Deposit_Contract = await ethers.getContractAt("IWMATIC", WMATICAddress);
-            const amountMaticToSwap = ((await ethers.provider.getBalance(testWalletAddress2)) / 2).toString();
+            const amountMaticToSwap = ( BigInt((await ethers.provider.getBalance(testWalletAddress2)) / 2) ).toString();
             await WMATIC_Deposit_Contract.connect(testWallet_Signer2).deposit({value: amountMaticToSwap});
             await WMATIC_Contract.connect(testWallet_Signer2).approve(iSwapRouterAddress, amountMaticToSwap);
             const swapParams = {
@@ -124,16 +134,37 @@ describe("UserPosition Tests", function () {
                 amountOutMinimum: 0,
                 sqrtPriceLimitX96: 0
             };
-            await iSwapRouter_Contract.connect(testWallet_Signer2).exactInputSingle(swapParams);
+            console.log('out:' + await iSwapRouter_Contract.connect(testWallet_Signer2).exactInputSingle(swapParams));
+            console.log(await deployedUserPosition.getDepositAmounts(WMATICAddress, WETHAddress))
 
             // collect fees again (expect increase in token balances)
-            const tx = await deployedUserPosition.connect(testWallet_Signer).collectFees(WMATICAddress, WETHAddress, true);
-            const receipt = await tx.wait();
-            console.log(receipt.events)
+            await deployedUserPosition.connect(testWallet_Signer).collectFees(WMATICAddress, WETHAddress, true);
             const wMaticBalanceAfterFees2 = await WMATIC_Contract.balanceOf(testWalletAddress);
             const wEthBalanceAfterFees2 = await WETH_Contract.balanceOf(testWalletAddress);
+            const contract_wMaticBalanceAfterFees2 = await WMATIC_Contract.balanceOf(deployedUserPosition.address);
+            const contract_wEthBalanceAfterFees2 = await WETH_Contract.balanceOf(deployedUserPosition.address);
             console.log('Users WMATIC balance diff: ' + (wMaticBalanceAfterFees2 - wMaticBalanceAfterFees));
             console.log('Users WETH balance diff: ' + (wEthBalanceAfterFees2 - wEthBalanceAfterFees));
+
+            console.log('Contract WMATIC balance diff: ' + (contract_wMaticBalanceAfterFees2 - contract_wMaticBalanceAfterFees));
+            console.log('Contract WETH balance diff: ' + (contract_wEthBalanceAfterFees2 - contract_wEthBalanceAfterFees));
+
+            // test removing position
+            console.log(await deployedUserPosition.getNumDeposits());
+            tx = await deployedUserPosition.connect(testWallet_Signer).removeUniswapV3LPDeposit(WMATICAddress, WETHAddress);
+            rec = await tx.wait()
+            console.log(rec.events?.filter((x) => {return x.event == "collectionAmounts"}))
+            expect(await deployedUserPosition.getNumDeposits()).to.equal(0);
+
+            const wMaticBalanceAfterRemoval = await WMATIC_Contract.balanceOf(testWalletAddress);
+            const wEthBalanceAfterRemoval = await WETH_Contract.balanceOf(testWalletAddress);
+            //console.log('Users WMATIC balance diff: ' + (wMaticBalanceAfterRemoval - wMaticBalanceAfterFees2));
+            //console.log('Users WETH balance diff: ' + (wEthBalanceAfterRemoval - wEthBalanceAfterFees2));
+
+            const fb = Number(await ethers.provider.getBalance(testWalletAddress)) + Number(await WMATIC_Contract.balanceOf(testWalletAddress)) + Number(await MATICx_Contract.balanceOf(testWalletAddress))
+            console.log('Users final balance:' + fb );
+
+            //console.log('Users final maticX balance: ' + Number(await MATICx_Contract.balanceOf(testWalletAddress)) )
         })
     })
 })
