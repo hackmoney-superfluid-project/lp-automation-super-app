@@ -33,7 +33,7 @@ describe("UserPosition Tests", function () {
 
         // deploy price oracle
         PriceOracle = await ethers.getContractFactory("UniswapV3PriceOracle");
-        deployedPriceOracle = await PriceOracle.deploy(iV3FactoryAddress, fDAIxAddress, WETHAddress, fee);
+        deployedPriceOracle = await PriceOracle.deploy(iV3FactoryAddress);
         await deployedPriceOracle.deployed();
 
         // deploy UserPosition
@@ -91,9 +91,6 @@ describe("UserPosition Tests", function () {
             
             // test token balances
             const fDAI_Contract = await ethers.getContractAt("IERC20", fDAIAddress);
-            const fDAIContractBalance = await fDAI_Contract.balanceOf(deployedUserPosition.address);
-            expect(fDAIContractBalance).to.equal(1000);
-            
             const WETH_Contract = await ethers.getContractAt("IERC20", WETHAddress);
             const uniV3LP_Contract = await ethers.getContractAt("IERC20", uniV3LPAddress);
             // make sure all supertokens are downgraded
