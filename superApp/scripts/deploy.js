@@ -10,11 +10,11 @@ const fDAIx = '0x745861AeD1EEe363b4AaA5F1994Be40b1e05Ff90';
 const { uniswapFactoryAddress } = require("../../uniswapFactory/currentAddress.js");
 
 const main = async () => {
-  const SuperAppPOC = await hre.ethers.getContractFactory("SuperAppPOC");
-  const superAppPOC = await SuperAppPOC.deploy(host, fDAIx, uniswapFactoryAddress);
-  await superAppPOC.deployed();
+  const SuperApp = await hre.ethers.getContractFactory("SuperApp");
+  const superApp = await SuperApp.deploy(host, fDAIx, uniswapFactoryAddress);
+  await superApp.deployed();
 
-  console.log("SuperAppPOC deployed to:", superAppPOC.address);
+  console.log("SuperApp deployed to:", superApp.address);
 }
 
 const runMain = async () => {

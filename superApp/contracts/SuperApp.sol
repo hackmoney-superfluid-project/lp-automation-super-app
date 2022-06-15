@@ -1,4 +1,4 @@
-//SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT
 pragma solidity >=0.8.0;
 
 import {ISuperfluid, ISuperToken, ISuperApp, ISuperAgreement, SuperAppDefinitions} from "@superfluid-finance/ethereum-contracts/contracts/interfaces/superfluid/ISuperfluid.sol";
@@ -8,7 +8,6 @@ import {IConstantFlowAgreementV1} from "@superfluid-finance/ethereum-contracts/c
 
 // import sub contract for user positions
 //import "./UserPosition.sol";
-import "./testContract.sol";
 
 /* Uniswap required contracts */
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
@@ -72,7 +71,7 @@ interface IUniswapFactory {
     function callPositionContract(address userAddress) external;
 }
 
-contract SuperAppPOC is KeeperCompatibleInterface, SuperAppBase {
+contract SuperApp is KeeperCompatibleInterface, SuperAppBase {
     /* --- Chain link --- */
     // Used to ensure that the upkeep is perfomed every __interval__ seconds
     uint256 public immutable interval;
