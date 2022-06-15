@@ -76,9 +76,9 @@ describe("UserPosition Tests", function () {
             // transfer funds (just impersonating the fDAIx contract to take funds directly from it)
             const fDAIx_Contract = await ethers.getContractAt("IERC20", fDAIxAddress);
             const testWallet_Signer = await ethers.getSigner(testWalletAddress);
-            await fDAIx_Contract.connect(testWallet_Signer).transfer(deployedUserPosition.address, 1000);
+            await fDAIx_Contract.connect(testWallet_Signer).transfer(deployedUserPosition.address, 1000000);
             var fDAIX_balanceOfContract = await fDAIx_Contract.balanceOf(deployedUserPosition.address);
-            expect(fDAIX_balanceOfContract).to.equal(1000);
+            expect(fDAIX_balanceOfContract).to.equal(1000000);
 
             // queue new position
             expect(await deployedUserPosition.getNumDeposits()).to.equal(0);
@@ -96,14 +96,31 @@ describe("UserPosition Tests", function () {
             
             const WETH_Contract = await ethers.getContractAt("IERC20", WETHAddress);
             const uniV3LP_Contract = await ethers.getContractAt("IERC20", uniV3LPAddress);
+            // make sure all supertokens are downgraded
             expect(fDAIX_balanceOfContract).to.equal(0);
+            // there may be a small amount remaining, so just log these:
             console.log('fDAI balance: ' + await fDAI_Contract.balanceOf(deployedUserPosition.address));
             console.log('WETH balance: ' + await WETH_Contract.balanceOf(deployedUserPosition.address));
-            console.log('UNI token balance: ' + await uniV3LP_Contract.balanceOf(deployedUserPosition.address));
+            // check for uniswap erc721 balance of 1
+            expect(await uniV3LP_Contract.balanceOf(deployedUserPosition.address)).to.equal(1);
             
-            // Josh left off here: TODO: check these console.log values to test that position is minted properly
-            // TODO: add expect() calls to check for specific values of each balanceOf
-            // currently stuck at swapExactInputSingle(), was previously outputting 0 WETH (which then causes it to skip the position mint)
+            // check liquidity of position
+            const updatedDeposit = await deployedUserPosition.getDeposit(fDAIAddress, WETHAddress)
+            expect(updatedDeposit.token0).to.equal(fDAIAddress)
+            expect(updatedDeposit.token1).to.equal(WETHAddress)
+            console.log('Liquidity: ' + updatedDeposit.liquidity)
+
+            // transfer funds and update position again (expected to increase liquidity)
+            await fDAIx_Contract.connect(testWallet_Signer).transfer(deployedUserPosition.address, 1000000);
+            fDAIX_balanceOfContract = await fDAIx_Contract.balanceOf(deployedUserPosition.address);
+            expect(fDAIX_balanceOfContract).to.equal(1000000);
+            await deployedUserPosition.connect(testWallet_Signer).maintainPosition();
+
+            // check that there is still 1 deposit and that liquidity has increased
+            const updatedDeposit2 = await deployedUserPosition.getDeposit(fDAIAddress, WETHAddress)
+            console.log('Liquidity: ' + updatedDeposit2.liquidity)
+            expect( Number(updatedDeposit2.liquidity) ).to.greaterThan( Number(updatedDeposit.liquidity) )
+            //expect(await deployedUserPosition.getNumDeposits()).to.equal(1); <-- failing, this tracks the array of hashes, not the mapping iteself, probably just forgot to update properly
         })
     })
 })
