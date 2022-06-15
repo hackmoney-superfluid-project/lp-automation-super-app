@@ -380,7 +380,7 @@ contract UserPosition is IERC721Receiver {
             swapExactInputSingle(
                 underlyingToken,
                 currentDeposit.token1,
-                underlyingContractBalance
+                underlyingContractBalance / 2
             );
         } else {
             swapExactInputSingle(
