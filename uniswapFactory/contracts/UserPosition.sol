@@ -15,6 +15,8 @@ import "@uniswap/v3-periphery/contracts/base/LiquidityManagement.sol";
 // Swap contracts (swap functions also uses TransferHelper.sol from above imports)
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 
+import '@openzeppelin/contracts/math/SafeMath.sol';
+
 import "./ISuperToken.sol";
 import "./KeeperCompatibleInterface.sol";
 import "./IUniswapV2Router02.sol";
@@ -23,6 +25,8 @@ import "./IUniswapV3PriceOracle.sol";
 
 //LiquidityManagement
 contract UserPosition is IERC721Receiver {
+    using SafeMath for uint256;
+
     /* --- Token Addresses --- */
     address public constant DAI = 0xc7AD46e0b8a400Bb3C915120d284AafbA8fc4735;
     address public constant fDAI = 0x15F0Ca26781C3852f8166eD2ebce5D18265cceb7;
@@ -321,12 +325,12 @@ contract UserPosition is IERC721Receiver {
             poolFee
         );
 
-        // TODO: We need to use the price from the oracle to calculate amountOutMinimum
-        uint256 amountOutMinimum = 1;
+        // we want no more than 1% slippage, so we are calculating 99% of the oracle price
+        // TODO: Write a test for this calculation to ensure the desired output. See the following:
+        // https://ethereum.stackexchange.com/questions/55701/how-to-do-solidity-percentage-calculation
+        // Multiply before divide first to avoid rounding to zero. This can cause overflow issues though so maybe some more thought is required here
+        uint256 amountOutMinimum = price.mul(99).div(100);
 
-        // Naively set amountOutMinimum to 0. In production, this value should be calculated using the Uniswap SDK 
-        // or an onchain price oracle. This prevents losing funds from sandwich attacks and other forms of price manipulation
-        // We also set the sqrtPriceLimitx96 to be 0 to ensure we swap our exact input amount.
         ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
             .ExactInputSingleParams({
                 tokenIn: _tokenIn,
