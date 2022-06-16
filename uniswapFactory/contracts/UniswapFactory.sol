@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pragma solidity =0.7.6;
 
 import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
@@ -11,14 +12,21 @@ contract UniswapFactory {
     INonfungiblePositionManager public immutable nonfungiblePositionManager;
     ISwapRouter public immutable iSwapRouter;
     IUniswapV3Factory iV3Factory;
+    address priceOracleAddress;
 
     // Not sure if we will need this:
     mapping(address => UserPosition) positions;
 
-    constructor(INonfungiblePositionManager _nonfungiblePositionManager, ISwapRouter _iSwapRouter, IUniswapV3Factory _iV3Factory) {
+    constructor(
+        INonfungiblePositionManager _nonfungiblePositionManager,
+        ISwapRouter _iSwapRouter,
+        IUniswapV3Factory _iV3Factory,
+        address _priceOracleAddress
+    ) {
         nonfungiblePositionManager = _nonfungiblePositionManager;
         iSwapRouter = _iSwapRouter;
         iV3Factory = _iV3Factory;
+        priceOracleAddress = _priceOracleAddress;
     }
 
     function createUserPositionContract(ISETH acceptedToken, address userAddress) external returns (address) {

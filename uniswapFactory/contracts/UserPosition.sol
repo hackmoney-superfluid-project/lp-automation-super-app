@@ -16,14 +16,17 @@ import "@uniswap/v3-periphery/contracts/base/LiquidityManagement.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 
 import "./IWMATIC.sol";
+import '@openzeppelin/contracts/math/SafeMath.sol';
+
 import "./ISuperToken.sol";
 import "./ISETH.sol";
 import "./KeeperCompatibleInterface.sol";
-import "./IUniswapV2Router02.sol";
-import "./IUniswapV2Factory.sol";
+import "./IUniswapV3PriceOracle.sol";
 
 //LiquidityManagement
 contract UserPosition is IERC721Receiver {
+    using SafeMath for uint256;
+
     /* --- Token Addresses --- */
     address public constant DAI = 0xc7AD46e0b8a400Bb3C915120d284AafbA8fc4735;
     address public constant fDAI = 0x15F0Ca26781C3852f8166eD2ebce5D18265cceb7;
@@ -37,6 +40,7 @@ contract UserPosition is IERC721Receiver {
     INonfungiblePositionManager public immutable nonfungiblePositionManager;
     ISwapRouter public immutable swapRouter;
     IUniswapV3Factory v3Factory;
+    address uniswapV3PriceOracle;
 
     /* --- Deposit Tracking --- */
     enum DepositType {
@@ -70,13 +74,15 @@ contract UserPosition is IERC721Receiver {
         ISETH _acceptedToken,
         address _userAddress,
         ISwapRouter _swapRouter,
-        IUniswapV3Factory _v3Factory
+        IUniswapV3Factory _v3Factory,
+        address _uniswapV3PriceOracle
     ) {
         nonfungiblePositionManager = _nonfungiblePositionManager;
         acceptedToken = _acceptedToken;
         userAddress = _userAddress;
         swapRouter = _swapRouter;
         v3Factory = _v3Factory;
+        uniswapV3PriceOracle = _uniswapV3PriceOracle;
     }
 
     // implementing onERC721Received so this contract can receive custody of erc721 tokens
@@ -201,6 +207,15 @@ contract UserPosition is IERC721Receiver {
     {
         orderNewDeposit(DepositType.UNISWAPv3_LP, token0, token1);
     }
+    
+    // To be used by frontend, removes a uni v3 lp position
+    // Collects the fees associated with provided liquidity
+    // The contract must hold the erc721 token before it can collect fees
+    function removeUniswapV3LPDeposit(address _token0, address _token1)
+        external
+        returns (uint256 amount0, uint256 amount1)
+    {
+        // Caller must own the ERC721 position, meaning it must be a deposit
 
     event collectionAmounts(uint256 amnt1, uint256 amnt2);
 
@@ -217,6 +232,7 @@ contract UserPosition is IERC721Receiver {
         // check that position exists before trying to collect fees
         if (deposits[tokenHash].token0 == token0) {
             // set amount0Max and amount1Max to uint256.max to collect all fees
+            // alternatively can set recipient to msg.sender and avoid another transaction in `sendToOwner`
             INonfungiblePositionManager.CollectParams
                 memory params = INonfungiblePositionManager.CollectParams({
                     tokenId: tokenId,
@@ -503,13 +519,26 @@ contract UserPosition is IERC721Receiver {
     function swapExactInputSingle(
         address _tokenIn,
         address _tokenOut,
-        uint256 amountIn
+        uint256 _amountIn
     ) private returns (uint256 amountOut) {
         // Approve the router to spend first token
-        TransferHelper.safeApprove(_tokenIn, address(swapRouter), amountIn);
+        TransferHelper.safeApprove(_tokenIn, address(swapRouter), _amountIn);
 
-        // Naively set amountOutMinimum to 0. In production, use an oracle or other data source to choose a safer value for amountOutMinimum.
-        // We also set the sqrtPriceLimitx96 to be 0 to ensure we swap our exact input amount.
+        uint32 secondsIn = 10;
+        uint256 price = IUniswapV3PriceOracle(uniswapV3PriceOracle).estimateAmountOut(
+            _tokenIn,
+            _tokenOut,
+            uint128(_amountIn),
+            secondsIn,
+            poolFee
+        );
+
+        // we want no more than 1% slippage, so we are calculating 99% of the oracle price
+        // TODO: Write a test for this calculation to ensure the desired output. See the following:
+        // https://ethereum.stackexchange.com/questions/55701/how-to-do-solidity-percentage-calculation
+        // Multiply before divide first to avoid rounding to zero. This can cause overflow issues though so maybe some more thought is required here
+        uint256 amountOutMinimum = price.mul(99).div(100);
+
         ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
             .ExactInputSingleParams({
                 tokenIn: _tokenIn,
@@ -517,8 +546,8 @@ contract UserPosition is IERC721Receiver {
                 fee: poolFee,
                 recipient: address(this),
                 deadline: block.timestamp,
-                amountIn: amountIn,
-                amountOutMinimum: 0,
+                amountIn: _amountIn,
+                amountOutMinimum: amountOutMinimum,
                 sqrtPriceLimitX96: 0
             });
 
@@ -636,5 +665,9 @@ contract UserPosition is IERC721Receiver {
         if (currentPosition >= hashArray.length) {
             currentPosition = 0;
         }
+    }
+
+    function downgradeToken() private {
+        acceptedToken.downgrade(acceptedToken.balanceOf(address(this)));
     }
 }
