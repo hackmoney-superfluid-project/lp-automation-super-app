@@ -29,8 +29,8 @@ contract UniswapFactory {
         priceOracleAddress = _priceOracleAddress;
     }
 
-    function createUserPositionContract(ISuperToken acceptedToken, address userAddress) external returns (address) {
-        UserPosition pos = new UserPosition(nonfungiblePositionManager, acceptedToken, userAddress, iSwapRouter, iV3Factory, priceOracleAddress);
+    function createUserPositionContract(ISETH acceptedToken, address userAddress) external returns (address) {
+        UserPosition pos = new UserPosition(nonfungiblePositionManager, acceptedToken, userAddress, iSwapRouter, iV3Factory);
         return address(pos);
     }
 
