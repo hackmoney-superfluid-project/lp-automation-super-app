@@ -207,15 +207,6 @@ contract UserPosition is IERC721Receiver {
     {
         orderNewDeposit(DepositType.UNISWAPv3_LP, token0, token1);
     }
-    
-    // To be used by frontend, removes a uni v3 lp position
-    // Collects the fees associated with provided liquidity
-    // The contract must hold the erc721 token before it can collect fees
-    function removeUniswapV3LPDeposit(address _token0, address _token1)
-        external
-        returns (uint256 amount0, uint256 amount1)
-    {
-        // Caller must own the ERC721 position, meaning it must be a deposit
 
     event collectionAmounts(uint256 amnt1, uint256 amnt2);
 
