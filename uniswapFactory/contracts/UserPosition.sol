@@ -16,7 +16,7 @@ import "@uniswap/v3-periphery/contracts/base/LiquidityManagement.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 
 import "./IWMATIC.sol";
-import '@openzeppelin/contracts/math/SafeMath.sol';
+import "@openzeppelin/contracts/math/SafeMath.sol";
 
 import "./ISuperToken.sol";
 import "./ISETH.sol";
@@ -32,8 +32,8 @@ contract UserPosition is IERC721Receiver {
     address public constant fDAI = 0x15F0Ca26781C3852f8166eD2ebce5D18265cceb7;
     address public constant fDAIx = 0x745861AeD1EEe363b4AaA5F1994Be40b1e05Ff90;
     address public constant wrappedETH =
-        0xc778417E063141139Fce010982780140Aa0cD5Ab;
-    address public constant WMATIC = 0x9c3C9283D3e44854697Cd22D3Faa240Cfb032889;
+        0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619; // MUMBAI: 0xc778417E063141139Fce010982780140Aa0cD5Ab;
+    address public constant WMATIC = 0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270; // MUMBAI: 0x9c3C9283D3e44854697Cd22D3Faa240Cfb032889;
     uint24 public constant poolFee = 3000;
 
     /* --- Uniswap Contracts --- */
@@ -207,17 +207,9 @@ contract UserPosition is IERC721Receiver {
     {
         orderNewDeposit(DepositType.UNISWAPv3_LP, token0, token1);
     }
-    
-    // To be used by frontend, removes a uni v3 lp position
-    // Collects the fees associated with provided liquidity
-    // The contract must hold the erc721 token before it can collect fees
-    function removeUniswapV3LPDeposit(address _token0, address _token1)
-        external
-        returns (uint256 amount0, uint256 amount1)
-    {
-        // Caller must own the ERC721 position, meaning it must be a deposit
 
     event collectionAmounts(uint256 amnt1, uint256 amnt2);
+    event reportAddress(address add);
 
     // to be used both internally and externally, collects all fees for a given position
     function collectFees(
@@ -297,14 +289,6 @@ contract UserPosition is IERC721Receiver {
             delete (deposits[tokenHash]);
             _removeFromHashArray(hashArrayIndices[tokenHash]);
 
-            // send entire contract balance of each collected fees back to owner
-            /*_sendToOwner(
-                token0,
-                token1,
-                _getTokenBalance(token0),
-                _getTokenBalance(token1)
-            );*/
-
             emit collectionAmounts(
                 _getTokenBalance(token0),
                 _getTokenBalance(token1)
@@ -312,27 +296,11 @@ contract UserPosition is IERC721Receiver {
 
             // swap token0 and token1 to accepted token and send back to user
             _swapAndSendToOwner(token0, _getTokenBalance(token0));
-            _swapAndSendToOwner(token1, _getTokenBalance(token1));
+            //_swapAndSendToOwner(token1, _getTokenBalance(token1));
 
             // return fees + liquidity
             amount0 = amount0Fees + amount0Liquidity;
             amount1 = amount1Fees + amount1Liquidity;
-
-            emit collectionAmounts(
-                _getTokenBalance(token0),
-                _getTokenBalance(token1)
-            );
-
-            /*
-            emit collectionAmounts(amount0, amount1);
-
-            _sendToOwner(
-                token0,
-                token1,
-                amount0,
-                amount1
-            );
-            */
         }
     }
 
@@ -356,42 +324,46 @@ contract UserPosition is IERC721Receiver {
 
             // swap to underlying token of acceptedtoken (handle special case of matic underlying token)
             uint256 amountAfterSwap;
-            if (underlyingToken == address(0)) {
-                // swap with wmatic (if needed)
-                if (token != WMATIC) {
+            if (token != underlyingToken) {
+                // if underlying token is native matic, swap with wmatic and downgrade
+                if (underlyingToken == address(0)) {
                     amountAfterSwap = swapExactInputSingle(
                         token,
                         WMATIC,
                         amount
                     );
+
+                    IWMATIC(WMATIC).withdraw(amountAfterSwap);
                 } else {
-                    amountAfterSwap = _getTokenBalance(token);
+                    amountAfterSwap = swapExactInputSingle(
+                        token,
+                        underlyingToken,
+                        amount
+                    );
+                }
+            } else {
+                amountAfterSwap = _getTokenBalance(token);
+            }
+
+            emit reportInt(amountAfterSwap);
+            if (amountAfterSwap > 0) {
+                // upgrade underlying tokens to super tokens (handle special case of matic underlying token)
+                if (underlyingToken == address(0)) {
+                    acceptedToken.upgradeByETH{value: amountAfterSwap}();
+                } else {
+                    // stuck here - approving tokens doesn't seem to fix the revert
+                    IERC20(token).approve(address(acceptedToken), amountAfterSwap);
+
+                    acceptedToken.upgrade(amountAfterSwap);
                 }
 
-                // downgrade to matic
-                IWMATIC(WMATIC).withdraw(amountAfterSwap);
-            } else {
-                amountAfterSwap = swapExactInputSingle(
-                    token,
-                    underlyingToken,
-                    amount
+                // send collected fees to owner
+                TransferHelper.safeTransfer(
+                    address(acceptedToken),
+                    userAddress,
+                    amountAfterSwap
                 );
             }
-            emit reportInt(amountAfterSwap);
-
-            // upgrade underlying tokens to super tokens (handle special case of matic underlying token)
-            if (underlyingToken == address(0)) {
-                acceptedToken.upgradeByETH{value: amountAfterSwap}();
-            } else {
-                acceptedToken.upgrade(amountAfterSwap);
-            }
-
-            // send collected fees to owner
-            TransferHelper.safeTransfer(
-                address(acceptedToken),
-                userAddress,
-                amountAfterSwap
-            );
         }
     }
 
@@ -525,19 +497,20 @@ contract UserPosition is IERC721Receiver {
         TransferHelper.safeApprove(_tokenIn, address(swapRouter), _amountIn);
 
         uint32 secondsIn = 10;
-        uint256 price = IUniswapV3PriceOracle(uniswapV3PriceOracle).estimateAmountOut(
-            _tokenIn,
-            _tokenOut,
-            uint128(_amountIn),
-            secondsIn,
-            poolFee
-        );
+        uint256 price = IUniswapV3PriceOracle(uniswapV3PriceOracle)
+            .estimateAmountOut(
+                _tokenIn,
+                _tokenOut,
+                uint128(_amountIn),
+                secondsIn,
+                poolFee
+            );
 
         // we want no more than 1% slippage, so we are calculating 99% of the oracle price
         // TODO: Write a test for this calculation to ensure the desired output. See the following:
         // https://ethereum.stackexchange.com/questions/55701/how-to-do-solidity-percentage-calculation
         // Multiply before divide first to avoid rounding to zero. This can cause overflow issues though so maybe some more thought is required here
-        uint256 amountOutMinimum = price.mul(99).div(100);
+        uint256 amountOutMinimum = price.mul(980).div(1000);
 
         ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
             .ExactInputSingleParams({
